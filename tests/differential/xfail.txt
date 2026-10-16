@@ -1,0 +1,8 @@
+# xfail registry for differential tests against PC-BASIC.
+#
+# Each line names a corpus program that is expected to diverge, optionally
+# followed by '#' and a reason. Programs that unexpectedly start matching
+# are reported as XPASS and should be removed from this list.
+#
+# Format:
+#   <program-stem>   # reason

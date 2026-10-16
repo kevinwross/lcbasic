@@ -39,6 +39,9 @@ public:
   // Return the physical dimensions of the display (e.g. 25 x 80).
   virtual Size size() const = 0;
 
+  // Return the current 1-based column of the cursor (for PRINT zones).
+  virtual int column() const = 0;
+
   // Read a single keypress; returns std::nullopt if no key is available
   // (non-blocking) or the implementation blocks until a key is pressed.
   virtual std::optional<int> get_key(bool blocking) = 0;

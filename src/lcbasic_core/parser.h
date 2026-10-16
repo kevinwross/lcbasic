@@ -39,6 +39,8 @@ struct Expr {
 
 struct PrintStmt {
   std::vector<std::unique_ptr<Expr>> args;
+  // Separator that follows each argument: Comma, Semicolon, or Eof (none).
+  std::vector<TokenType> separators;
   bool trailing_separator = false;
 };
 

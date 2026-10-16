@@ -48,6 +48,10 @@ AnsiScreen::Size AnsiScreen::size() const {
   return Size{rows_, cols_};
 }
 
+int AnsiScreen::column() const {
+  return getcurx(window_) + 1;
+}
+
 std::optional<int> AnsiScreen::get_key(bool blocking) {
   nodelay(window_, !blocking);
   int ch = wgetch(window_);

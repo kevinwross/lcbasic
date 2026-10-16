@@ -7,6 +7,7 @@ endif()
 if(HAVE_CURSES)
   add_library(lcbasic_screen STATIC
     headless_screen.cpp
+    stdout_screen.cpp
     ansi_screen.cpp
   )
   target_link_libraries(lcbasic_screen PUBLIC ${CURSES_LIBRARY})
@@ -14,6 +15,7 @@ else()
   message(STATUS "Curses not found; building headless screen only (no ANSI backend)")
   add_library(lcbasic_screen STATIC
     headless_screen.cpp
+    stdout_screen.cpp
   )
 endif()
 

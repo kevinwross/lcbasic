@@ -1,0 +1,4 @@
+10 PRINT "A"; "B"; "C"
+20 PRINT 1; 2; 3
+30 PRINT X
+40 END

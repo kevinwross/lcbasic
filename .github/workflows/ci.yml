@@ -15,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libncurses-dev cmake g++
+          sudo apt-get install -y libncurses-dev cmake g++ python3-pip
 
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -23,9 +23,11 @@ jobs:
       - name: Build
         run: cmake --build build -j$(nproc)
 
-      - name: Run tests
+      - name: Run unit tests
         run: ctest --test-dir build --output-on-failure
 
-      - name: Install pcbasic (differential oracle)
-        run: |
-          sudo apt-get install -y pcbasic || true
+      - name: Install PC-BASIC (differential oracle)
+        run: pip install pcbasic
+
+      - name: Run differential tests vs PC-BASIC
+        run: python3 tests/differential/difftest.py

@@ -1,0 +1,6 @@
+10 N = 0
+20 FOR I = 1 TO 100
+30 N = N + I
+40 NEXT I
+50 PRINT N
+60 END

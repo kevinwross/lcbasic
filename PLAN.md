@@ -113,7 +113,7 @@ stack (GOSUB + FOR frames), memory read/patch, bytecode disassembly, snapshots.
 | M3 | File I/O + DOS commands, error handling (`ON ERROR`/`RESUME`), event trapping | ✅ |
 | M4 | Tokenized `.BAS` read + write (incl. protected) | ✅ |
 | M5 | `lcbasic-debug` library + `lcbasic-dap` | ✅ |
-| M6 | Differential hardening, `xfail` registry, conformance corpus | ⏳ |
+| M6 | Differential hardening, `xfail` registry, conformance corpus | ✅ |
 | M7 | GPU screen backend, sound, time-travel debugging | ⏳ |
 
 ---

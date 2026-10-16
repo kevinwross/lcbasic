@@ -1,0 +1,7 @@
+10 N = 5
+20 F = 1
+30 FOR I = 1 TO N
+40 F = F * I
+50 NEXT I
+60 PRINT F
+70 END

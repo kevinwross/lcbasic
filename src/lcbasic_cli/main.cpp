@@ -5,6 +5,7 @@
 #include "host.h"
 #include "ansi_screen.h"
 #include "headless_screen.h"
+#include "stdout_screen.h"
 #include "basic_format.h"
 
 #include <algorithm>
@@ -297,24 +298,38 @@ static bool run_direct_statement(const std::string& source, Screen& screen,
 // ---------- main ----------
 
 int main(int argc, char** argv) {
-  if (argc < 2) {
-    // No argument: start direct-mode REPL with headless screen.
+  bool headless = false;
+  std::string program_path;
+
+  for (int i = 1; i < argc; i++) {
+    std::string a = argv[i];
+    if (a == "--headless") {
+      headless = true;
+    } else if (a == "--help" || a == "-h") {
+      std::cout << "Usage: lcbasic [--headless] [program.bas]\n";
+      std::cout << "  Run a GW-BASIC program from a .bas (text or tokenized).\n";
+      std::cout << "  --headless   write program output to stdout (no ncurses)\n";
+      std::cout << "  Without a program, starts the direct-mode REPL.\n";
+      return 0;
+    } else {
+      program_path = a;
+    }
+  }
+
+  if (program_path.empty()) {
+    // No program: start direct-mode REPL.
     RealHost host;
-    HeadlessScreen screen(25, 80);
-    repl(screen, host);
+    if (headless) {
+      StdoutScreen screen;
+      repl(screen, host);
+    } else {
+      HeadlessScreen screen(25, 80);
+      repl(screen, host);
+    }
     return 0;
   }
 
-  std::string arg = argv[1];
-
-  if (arg == "--help" || arg == "-h") {
-    std::cout << "Usage: lcbasic [program.bas]\n";
-    std::cout << "  Run a GW-BASIC program from a .bas file.\n";
-    std::cout << "  Without arguments, starts the direct-mode REPL.\n";
-    return 0;
-  }
-
-  auto file_lines = load_bas_file(arg);
+  auto file_lines = load_bas_file(program_path);
 
   Program program;
   for (auto& [ln, src] : file_lines) {
@@ -336,6 +351,17 @@ int main(int argc, char** argv) {
   }
 
   RealHost host;
+
+  if (headless) {
+    StdoutScreen screen;
+    if (!run_program(program, screen, host)) {
+      screen.refresh();
+      return 1;
+    }
+    screen.refresh();
+    return 0;
+  }
+
   AnsiScreen screen;
   if (!run_program(program, screen, host)) {
     screen.refresh();

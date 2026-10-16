@@ -1,0 +1,3 @@
+10 A = 1: B = 2: PRINT A + B
+20 PRINT "DONE"
+30 END

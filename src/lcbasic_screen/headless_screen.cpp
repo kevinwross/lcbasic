@@ -42,6 +42,8 @@ void HeadlessScreen::refresh() {}
 
 HeadlessScreen::Size HeadlessScreen::size() const { return Size{rows_, cols_}; }
 
+int HeadlessScreen::column() const { return col_; }
+
 std::optional<int> HeadlessScreen::get_key(bool /*blocking*/) {
   return std::nullopt;
 }

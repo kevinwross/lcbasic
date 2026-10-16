@@ -1,0 +1,6 @@
+10 A = 5
+20 B = 10
+30 C = A + B
+40 PRINT C
+50 PRINT A * B
+60 END

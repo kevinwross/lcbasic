@@ -90,18 +90,26 @@ bool Parser::parse_statement() {
       } else {
         match(TokenType::KeywordPrint);
         PrintStmt print;
-        if (!check(TokenType::Newline) && !check(TokenType::Colon) &&
-            !is_at_end()) {
-          do {
-            auto expr = parse_expression();
-            if (!expr) return false;
-            print.args.push_back(std::move(expr));
-          } while (match(TokenType::Comma) || match(TokenType::Semicolon));
-          print.trailing_separator =
-              (current_ > 0 &&
-               (tokens_[current_ - 1].type == TokenType::Comma ||
-                tokens_[current_ - 1].type == TokenType::Semicolon));
+        while (!is_at_end() && !check(TokenType::Newline) &&
+               !check(TokenType::Colon)) {
+          auto expr = parse_expression();
+          if (!expr) return false;
+          print.args.push_back(std::move(expr));
+          if (check(TokenType::Comma) || check(TokenType::Semicolon)) {
+            print.separators.push_back(peek().type);
+            advance();
+            if (is_at_end() || check(TokenType::Newline) ||
+                check(TokenType::Colon)) {
+              break;  // trailing separator
+            }
+          } else {
+            print.separators.push_back(TokenType::Eof);
+            break;
+          }
         }
+        print.trailing_separator =
+            (!print.separators.empty() &&
+             print.separators.back() != TokenType::Eof);
         stmt.data = std::move(print);
       }
     } else if (match(TokenType::KeywordLet)) {
@@ -423,8 +431,21 @@ std::unique_ptr<Statement> Parser::parse_statement_no_line() {
         auto expr = parse_expression();
         if (!expr) return nullptr;
         print.args.push_back(std::move(expr));
-        if (!match(TokenType::Comma) && !match(TokenType::Semicolon)) break;
+        if (check(TokenType::Comma) || check(TokenType::Semicolon)) {
+          print.separators.push_back(peek().type);
+          advance();
+          if (is_at_end() || check(TokenType::Newline) ||
+              check(TokenType::Colon) || check(TokenType::KeywordElse)) {
+            break;
+          }
+        } else {
+          print.separators.push_back(TokenType::Eof);
+          break;
+        }
       }
+      print.trailing_separator =
+          (!print.separators.empty() &&
+           print.separators.back() != TokenType::Eof);
       stmt->data = std::move(print);
     }
   } else if (match(TokenType::KeywordGoto)) {

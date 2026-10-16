@@ -1,4 +1,5 @@
 #include "vm.h"
+#include "number_format.h"
 
 #include <algorithm>
 #include <sstream>
@@ -171,7 +172,12 @@ ExecStatus Vm::execute(bool single_step) {
         case OpCode::Add: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() + b.as_double()));
+          // String + string concatenates; otherwise numeric addition.
+          if (a.is_string() || b.is_string()) {
+            push(Value(a.as_string() + b.as_string()));
+          } else {
+            push(Value(a.as_double() + b.as_double()));
+          }
           break;
         }
         case OpCode::Sub: {
@@ -195,37 +201,37 @@ ExecStatus Vm::execute(bool single_step) {
         case OpCode::Eq: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() == b.as_double() ? 1.0 : 0.0));
+          push(Value(a.as_double() == b.as_double() ? -1.0 : 0.0));
           break;
         }
         case OpCode::Ne: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() != b.as_double() ? 1.0 : 0.0));
+          push(Value(a.as_double() != b.as_double() ? -1.0 : 0.0));
           break;
         }
         case OpCode::Lt: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() < b.as_double() ? 1.0 : 0.0));
+          push(Value(a.as_double() < b.as_double() ? -1.0 : 0.0));
           break;
         }
         case OpCode::Le: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() <= b.as_double() ? 1.0 : 0.0));
+          push(Value(a.as_double() <= b.as_double() ? -1.0 : 0.0));
           break;
         }
         case OpCode::Gt: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() > b.as_double() ? 1.0 : 0.0));
+          push(Value(a.as_double() > b.as_double() ? -1.0 : 0.0));
           break;
         }
         case OpCode::Ge: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() >= b.as_double() ? 1.0 : 0.0));
+          push(Value(a.as_double() >= b.as_double() ? -1.0 : 0.0));
           break;
         }
         case OpCode::Print: {
@@ -233,9 +239,7 @@ ExecStatus Vm::execute(bool single_step) {
           if (v.is_string()) {
             screen_.print(v.as_string());
           } else {
-            std::ostringstream oss;
-            oss << v.as_double();
-            screen_.print(oss.str());
+            screen_.print(format_basic_number(v.as_double()));
           }
           break;
         }
@@ -371,6 +375,15 @@ ExecStatus Vm::execute(bool single_step) {
           option_base_ = static_cast<std::int32_t>(inst.operand);
           break;
         }
+        case OpCode::NextZone: {
+          // Advance to the next 14-column print zone.
+          int col = screen_.column();  // 1-based
+          int next_zone = ((col - 1) / 14 + 1) * 14 + 1;
+          int spaces = next_zone - col;
+          if (spaces < 0) spaces = 0;
+          for (int i = 0; i < spaces; i++) screen_.putc(' ');
+          break;
+        }
         case OpCode::Open: {
           double fn_d = pop().as_double();
           std::string mode = pop().as_string();
@@ -411,7 +424,10 @@ ExecStatus Vm::execute(bool single_step) {
             break;
           }
           int handle = file_handles_[filenum];
-          host_.file_write(handle, val.as_string());
+          std::string out_text =
+              val.is_string() ? val.as_string()
+                              : format_basic_number(val.as_double());
+          host_.file_write(handle, out_text);
           break;
         }
         case OpCode::InputFile: {

@@ -76,7 +76,7 @@ TEST(e2e_print_number_on_headless_screen) {
   REQUIRE(run_compiled(compiler, screen));
 
   screen.refresh();
-  CHECK(screen.last_output() == "42\n");
+  CHECK(screen.last_output() == " 42 \n");
 }
 
 TEST(e2e_variables_and_arithmetic) {
@@ -90,7 +90,7 @@ TEST(e2e_variables_and_arithmetic) {
   REQUIRE(run_compiled(compiler, screen));
 
   screen.refresh();
-  CHECK(screen.last_output() == "7\n");
+  CHECK(screen.last_output() == " 7 \n");
 }
 
 TEST(e2e_goto) {
@@ -135,7 +135,7 @@ TEST(e2e_for_loop) {
   REQUIRE(run_compiled(compiler, screen));
 
   screen.refresh();
-  CHECK(screen.last_output() == "1\n2\n3\n");
+  CHECK(screen.last_output() == " 1 \n 2 \n 3 \n");
 }
 
 TEST(e2e_gosub_return) {
@@ -161,7 +161,7 @@ TEST(e2e_type_suffix_integer) {
   HeadlessScreen screen(25, 80);
   REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
-  CHECK(screen.last_output() == "7\n");
+  CHECK(screen.last_output() == " 7 \n");
 }
 
 TEST(e2e_dim_array) {
@@ -174,7 +174,7 @@ TEST(e2e_dim_array) {
   HeadlessScreen screen(25, 80);
   REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
-  CHECK(screen.last_output() == "10\n20\n30\n");
+  CHECK(screen.last_output() == " 10 \n 20 \n 30 \n");
 }
 
 TEST(e2e_data_read) {
@@ -187,7 +187,7 @@ TEST(e2e_data_read) {
   HeadlessScreen screen(25, 80);
   REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
-  CHECK(screen.last_output() == "10\n20\n30\n");
+  CHECK(screen.last_output() == " 10 \n 20 \n 30 \n");
 }
 
 TEST(e2e_data_read_string) {
@@ -212,7 +212,7 @@ TEST(e2e_restore) {
   HeadlessScreen screen(25, 80);
   REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
-  CHECK(screen.last_output() == "1\n2\n1\n");
+  CHECK(screen.last_output() == " 1 \n 2 \n 1 \n");
 }
 
 TEST(e2e_option_base) {
@@ -224,7 +224,7 @@ TEST(e2e_option_base) {
   HeadlessScreen screen(25, 80);
   REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
-  CHECK(screen.last_output() == "100\n");
+  CHECK(screen.last_output() == " 100 \n");
 }
 
 TEST(e2e_file_write_read) {

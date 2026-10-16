@@ -7,6 +7,7 @@ LDFLAGS := -lncurses
 
 CORE_SRC := src/lcbasic_core/value.cpp \
             src/lcbasic_core/host.cpp \
+            src/lcbasic_core/number_format.cpp \
             src/lcbasic_core/lexer.cpp \
             src/lcbasic_core/parser.cpp \
             src/lcbasic_core/compiler.cpp \
@@ -15,6 +16,7 @@ CORE_SRC := src/lcbasic_core/value.cpp \
             src/lcbasic_fstok/basic_format.cpp
 
 SCREEN_SRC := src/lcbasic_screen/headless_screen.cpp \
+              src/lcbasic_screen/stdout_screen.cpp \
               src/lcbasic_screen/ansi_screen.cpp
 
 CORE_INC := -Isrc/lcbasic_core

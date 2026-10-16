@@ -1,0 +1,7 @@
+10 A$ = "HELLO"
+20 B$ = "WORLD"
+30 PRINT A$
+40 PRINT B$
+50 C$ = A$ + B$
+60 PRINT C$
+70 END

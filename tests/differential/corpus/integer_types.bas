@@ -1,0 +1,5 @@
+10 X% = 7
+20 Y% = 3
+30 PRINT X% + Y%
+40 PRINT X% * Y%
+50 END

@@ -17,6 +17,7 @@ public:
   void print(const std::string& text) override;
   void refresh() override;
   Size size() const override;
+  int column() const override;
   std::optional<int> get_key(bool blocking) override;
 
 private:

@@ -21,3 +21,4 @@ Testing/
 # Stray BASIC files from manual runs / tests
 *.bas
 !fixtures/**
+!tests/differential/corpus/**

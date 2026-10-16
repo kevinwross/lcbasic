@@ -66,12 +66,14 @@ void Compiler::compile_statement(const Statement& stmt) {
         if constexpr (std::is_same_v<T, PrintStmt>) {
           for (std::size_t i = 0; i < s.args.size(); ++i) {
             compile_expr(*s.args[i], line);
-            if (i > 0) {
-              auto sp_idx = add_constant(Value(std::string(" ")));
-              emit(OpCode::Constant, line, sp_idx);
-              emit(OpCode::Print, line);
-            }
             emit(OpCode::Print, line);
+            TokenType sep =
+                (i < s.separators.size()) ? s.separators[i] : TokenType::Eof;
+            if (sep == TokenType::Comma) {
+              // Comma advances to the next 14-column print zone.
+              emit(OpCode::NextZone, line);
+            }
+            // Semicolon or none: no separator.
           }
           if (!s.trailing_separator) {
             auto nl_idx = add_constant(Value(std::string("\n")));

@@ -40,6 +40,7 @@ const char* opcode_name(OpCode op) {
     case OpCode::ReadArray: return "AREAD";
     case OpCode::Restore: return "RESTORE";
     case OpCode::SetOptionBase: return "OPTION";
+    case OpCode::NextZone: return "ZONE";
     case OpCode::Open: return "OPEN";
     case OpCode::Close: return "CLOSE";
     case OpCode::PrintFile: return "PRINT#";
