@@ -9,4 +9,4 @@ add_library(lcbasic_core STATIC
 
 target_include_directories(lcbasic_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-target_link_libraries(lcbasic_core PRIVATE lcbasic_screen)
+target_link_libraries(lcbasic_core PRIVATE lcbasic_screen lcbasic_fstok)

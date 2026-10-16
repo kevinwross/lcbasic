@@ -5,6 +5,7 @@
 #include "host.h"
 #include "ansi_screen.h"
 #include "headless_screen.h"
+#include "basic_format.h"
 
 #include <algorithm>
 #include <fstream>
@@ -37,29 +38,15 @@ struct ProgramStore {
 
 static std::vector<std::pair<std::int32_t, std::string>> load_bas_file(
     const std::string& path) {
-  std::ifstream file(path);
-  if (!file.is_open()) {
+  auto br = fstok::load_bas_file(path);
+  if (br.program.empty()) {
     std::cerr << "lcbasic: cannot open '" << path << "'\n";
     std::exit(1);
   }
-
-  std::vector<std::pair<std::int32_t, std::string>> lines;
-  std::string raw;
-  while (std::getline(file, raw)) {
-    if (!raw.empty() && raw.back() == '\r') raw.pop_back();
-    if (raw.empty()) continue;
-
-    std::istringstream iss(raw);
-    std::int32_t line_number = 0;
-    iss >> line_number;
-    if (iss.fail()) continue; // skip lines without a line number
-
-    std::string rest;
-    std::getline(iss, rest);
-    std::size_t start = rest.find_first_not_of(" \t");
-    if (start != std::string::npos) rest = rest.substr(start);
-    lines.emplace_back(line_number, rest);
-  }
+  std::vector<std::pair<std::int32_t, std::string>> lines(br.program.begin(),
+                                                          br.program.end());
+  std::sort(lines.begin(), lines.end(),
+            [](const auto& a, const auto& b) { return a.first < b.first; });
   return lines;
 }
 
@@ -161,7 +148,9 @@ static void repl(Screen& screen, Host& host) {
       // Build program from store.
       Program program;
       for (auto& [ln, src] : store.lines) {
-        Lexer lexer(src, ln);
+        // Prepend line number so the parser sees it as the first token.
+        std::string numbered = std::to_string(ln) + " " + src;
+        Lexer lexer(numbered, ln);
         auto tokens = lexer.scan();
         Parser parser(std::move(tokens));
         if (!parser.parse()) {
@@ -183,6 +172,95 @@ static void repl(Screen& screen, Host& host) {
           std::remove_if(store.lines.begin(), store.lines.end(),
                          [&](const auto& p) { return p.first == line_number; }),
           store.lines.end());
+    } else if (input.rfind("SAVE ", 0) == 0 || input.rfind("save ", 0) == 0) {
+      // SAVE "file" [,B]  — ,B writes tokenized binary format
+      std::string args = input.substr(5);
+      // Skip leading whitespace.
+      std::size_t astart = args.find_first_not_of(" \t");
+      if (astart == std::string::npos) {
+        std::cerr << "lcbasic: SAVE requires a filename\n";
+      } else {
+        args = args.substr(astart);
+        std::string token;
+        bool binary = false;
+
+        if (args.front() == '"') {
+          // Quoted filename: find closing quote.
+          std::size_t endq = args.find('"', 1);
+          if (endq != std::string::npos) {
+            token = args.substr(1, endq - 1);
+            std::string after = args.substr(endq + 1);
+            // Skip whitespace, check for ,B
+            std::size_t p = after.find_first_not_of(" \t");
+            if (p != std::string::npos && after[p] == ',') {
+              std::size_t q = after.find_first_not_of(" \t", p + 1);
+              if (q != std::string::npos &&
+                  (after[q] == 'B' || after[q] == 'b')) {
+                binary = true;
+              }
+            }
+          } else {
+            token = args.substr(1);
+          }
+        } else {
+          // Unquoted: read to comma or end.
+          std::size_t comma = args.find(',');
+          if (comma != std::string::npos) {
+            token = args.substr(0, comma);
+            std::string after = args.substr(comma + 1);
+            std::size_t p = after.find_first_not_of(" \t");
+            if (p != std::string::npos &&
+                (after[p] == 'B' || after[p] == 'b')) {
+              binary = true;
+            }
+          } else {
+            token = args;
+          }
+        }
+
+        fstok::BasicProgram prog;
+        for (auto& [ln, src] : store.lines) {
+          prog[ln] = src;
+        }
+        fstok::save_bas_file(token, prog, binary, false);
+        std::cout << "Saved '" << token << "' ("
+                  << (binary ? "binary" : "text") << ")\n";
+      }
+    } else if (input.rfind("LOAD ", 0) == 0 || input.rfind("load ", 0) == 0) {
+      // LOAD "file" — auto-detect text vs binary
+      std::string args = input.substr(5);
+      std::size_t astart = args.find_first_not_of(" \t");
+      if (astart == std::string::npos) {
+        std::cerr << "lcbasic: LOAD requires a filename\n";
+      } else {
+        args = args.substr(astart);
+        std::string token;
+
+        if (args.front() == '"') {
+          std::size_t endq = args.find('"', 1);
+          if (endq != std::string::npos) {
+            token = args.substr(1, endq - 1);
+          } else {
+            token = args.substr(1);
+          }
+        } else {
+          token = args;
+        }
+
+        auto br = fstok::load_bas_file(token);
+        if (br.program.empty()) {
+          std::cerr << "lcbasic: could not load '" << token << "'\n";
+        } else {
+          store.clear();
+          for (auto& [ln, src] : br.program) {
+            store.lines.emplace_back(ln, src);
+          }
+          std::sort(store.lines.begin(), store.lines.end(),
+                    [](const auto& a, const auto& b) { return a.first < b.first; });
+          std::cout << "Loaded '" << token << "' ("
+                    << (br.is_binary ? "binary" : "text") << ")\n";
+        }
+      }
     } else {
       // Direct-mode statement (no line number): execute immediately.
       if (!run_direct_statement(input, screen, host)) {

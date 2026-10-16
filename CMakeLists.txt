@@ -44,6 +44,7 @@ endif()
 
 add_subdirectory(src/lcbasic_core)
 add_subdirectory(src/lcbasic_screen)
+add_subdirectory(src/lcbasic_fstok)
 
 option(BUILD_CLI "Build the lcbasic CLI binary" ON)
 if(BUILD_CLI)
