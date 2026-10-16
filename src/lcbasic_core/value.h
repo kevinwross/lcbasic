@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <variant>
 
 // GW-BASIC numeric types. All math is performed in double (host f64) with
@@ -58,4 +59,17 @@ struct Value {
         },
         data);
   }
+};
+
+// In-memory variable store. Uninitialised variables read as numeric zero,
+// matching GW-BASIC behaviour.
+class VariableStore {
+public:
+  Value& get(const std::string& name);
+  const Value& get(const std::string& name) const;
+  void set(const std::string& name, const Value& v);
+  bool contains(const std::string& name) const;
+
+private:
+  std::unordered_map<std::string, Value> vars_;
 };

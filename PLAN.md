@@ -107,8 +107,8 @@ stack (GOSUB + FOR frames), memory read/patch, bytecode disassembly, snapshots.
 
 | # | Deliverable | Status |
 |---|---|---|
-| M0 | Workspace skeleton, `Screen` interface + ANSI/headless backends, `lcbasic file.bas` runs trivial `PRINT`, CI | 🚧 |
-| M1 | Lexer/parser/line store, direct-mode REPL, `LIST`/`NEW`/`RUN`, expressions, core control flow | 🚧 |
+| M0 | Workspace skeleton, `Screen` interface + ANSI/headless backends, `lcbasic file.bas` runs trivial `PRINT`, CI | ✅ |
+| M1 | Lexer/parser/line store, direct-mode REPL, `LIST`/`NEW`/`RUN`, expressions, core control flow | ✅ |
 | M2 | Types, arrays (`DIM`/`OPTION BASE`/`DEF*`), strings, `DEF FN`, `DATA`/`READ`/`RESTORE` | ⏳ |
 | M3 | File I/O + DOS commands, error handling (`ON ERROR`/`RESUME`), event trapping | ⏳ |
 | M4 | Tokenized `.BAS` read + write (incl. protected) | ⏳ |

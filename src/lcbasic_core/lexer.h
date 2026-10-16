@@ -7,18 +7,51 @@
 #include <vector>
 
 enum class TokenType {
+  // Literals
   Number,
   String,
   Identifier,
+
+  // Keywords
   KeywordPrint,
   KeywordLet,
-  Let,  // alias for keyword LET
+  KeywordIf,
+  KeywordThen,
+  KeywordElse,
+  KeywordGoto,
+  KeywordFor,
+  KeywordNext,
+  KeywordGosub,
+  KeywordReturn,
+  KeywordEnd,
+  KeywordStop,
+  KeywordRem,
+  KeywordData,
+  KeywordRead,
+  KeywordRestore,
+  KeywordDim,
+  KeywordOption,
+  KeywordBase,
+  KeywordInput,
+  KeywordLine,
+  KeywordOn,
+  KeywordError,
+  KeywordResume,
+  KeywordCls,
+  KeywordLocate,
+  KeywordColor,
+  KeywordTo,
+  KeywordStep,
+
+  // Punctuation
   Newline,
   Colon,
   Comma,
   Semicolon,
   LParen,
   RParen,
+
+  // Operators
   Plus,
   Minus,
   Star,
@@ -29,6 +62,10 @@ enum class TokenType {
   Le,
   Gt,
   Ge,
+  And,
+  Or,
+  Not,
+
   Eof,
   Error,
 };
@@ -67,4 +104,5 @@ private:
   bool is_alpha(char c) const;
   bool is_digit(char c) const;
   bool is_at_end() const;
+  static TokenType keyword(const std::string& text);
 };

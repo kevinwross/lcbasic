@@ -1,7 +1,44 @@
 #include "lexer.h"
 
 #include <cctype>
-#include <stdexcept>
+#include <string_view>
+#include <unordered_map>
+
+namespace {
+
+const std::unordered_map<std::string_view, TokenType> kKeywords = {
+    {"PRINT", TokenType::KeywordPrint},
+    {"LET", TokenType::KeywordLet},
+    {"IF", TokenType::KeywordIf},
+    {"THEN", TokenType::KeywordThen},
+    {"ELSE", TokenType::KeywordElse},
+    {"GOTO", TokenType::KeywordGoto},
+    {"FOR", TokenType::KeywordFor},
+    {"NEXT", TokenType::KeywordNext},
+    {"GOSUB", TokenType::KeywordGosub},
+    {"RETURN", TokenType::KeywordReturn},
+    {"END", TokenType::KeywordEnd},
+    {"STOP", TokenType::KeywordStop},
+    {"REM", TokenType::KeywordRem},
+    {"DATA", TokenType::KeywordData},
+    {"READ", TokenType::KeywordRead},
+    {"RESTORE", TokenType::KeywordRestore},
+    {"DIM", TokenType::KeywordDim},
+    {"OPTION", TokenType::KeywordOption},
+    {"BASE", TokenType::KeywordBase},
+    {"INPUT", TokenType::KeywordInput},
+    {"LINE", TokenType::KeywordLine},
+    {"ON", TokenType::KeywordOn},
+    {"ERROR", TokenType::KeywordError},
+    {"RESUME", TokenType::KeywordResume},
+    {"CLS", TokenType::KeywordCls},
+    {"LOCATE", TokenType::KeywordLocate},
+    {"COLOR", TokenType::KeywordColor},
+    {"TO", TokenType::KeywordTo},
+    {"STEP", TokenType::KeywordStep},
+};
+
+}  // namespace
 
 Lexer::Lexer(std::string source, std::int32_t line_number)
   : source_(std::move(source)), line_number_(line_number) {}
@@ -57,6 +94,12 @@ Token Lexer::error_token(const std::string& message) {
                static_cast<std::int32_t>(start_)};
 }
 
+TokenType Lexer::keyword(const std::string& text) {
+  auto it = kKeywords.find(text);
+  if (it != kKeywords.end()) return it->second;
+  return TokenType::Identifier;
+}
+
 Token Lexer::scan_number() {
   while (is_digit(peek())) advance();
 
@@ -70,11 +113,7 @@ Token Lexer::scan_number() {
   if (peek() == 'E' || peek() == 'D' || peek() == 'e' || peek() == 'd') {
     advance();
     if (peek() == '+' || peek() == '-') advance();
-    if (!is_digit(peek())) {
-      // Malformed exponent; still produce what we have.
-    } else {
-      while (is_digit(peek())) advance();
-    }
+    while (is_digit(peek())) advance();
   }
 
   std::string lexeme = source_.substr(start_, current_ - start_);
@@ -111,11 +150,7 @@ Token Lexer::scan_identifier_or_keyword() {
   }
 
   std::string lexeme = source_.substr(start_, current_ - start_);
-
-  // GW-BASIC type suffixes are part of the identifier.
-  TokenType type = TokenType::Identifier;
-  if (lexeme == "PRINT") type = TokenType::KeywordPrint;
-  else if (lexeme == "LET") type = TokenType::Let;
+  TokenType type = keyword(lexeme);
 
   return Token{type, lexeme, 0.0, line_number_, static_cast<std::int32_t>(start_)};
 }
@@ -132,7 +167,6 @@ Token Lexer::scan_token() {
   char c = advance();
 
   if (is_digit(c)) {
-    // current_ points one past the digit; rewind so scan_number reads from start_.
     current_ = start_;
     return scan_number();
   }
