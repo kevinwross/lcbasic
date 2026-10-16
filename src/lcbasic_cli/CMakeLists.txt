@@ -1,0 +1,6 @@
+if(HAVE_CURSES)
+  add_executable(lcbasic main.cpp)
+  target_link_libraries(lcbasic PRIVATE lcbasic_core lcbasic_screen ${CURSES_LIBRARY})
+else()
+  message(STATUS "Curses not found; CLI binary disabled (no ANSI screen backend)")
+endif()
