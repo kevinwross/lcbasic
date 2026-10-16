@@ -38,6 +38,11 @@ const std::unordered_map<std::string_view, TokenType> kKeywords = {
     {"STEP", TokenType::KeywordStep},
     {"DEF", TokenType::KeywordDef},
     {"FN", TokenType::KeywordFn},
+    {"APPEND", TokenType::KeywordAppend},
+    {"OPEN", TokenType::KeywordOpen},
+    {"CLOSE", TokenType::KeywordClose},
+    {"OUTPUT", TokenType::KeywordOutput},
+    {"AS", TokenType::KeywordAs},
 };
 
 }  // namespace
@@ -192,6 +197,7 @@ Token Lexer::scan_token() {
     case '-': return make_token(TokenType::Minus, "-");
     case '*': return make_token(TokenType::Star, "*");
     case '/': return make_token(TokenType::Slash, "/");
+    case '#': return make_token(TokenType::KeywordHash, "#");
     case '=': return make_token(TokenType::Eq, "=");
     case '<':
       if (match('>')) return make_token(TokenType::Ne, "<>");

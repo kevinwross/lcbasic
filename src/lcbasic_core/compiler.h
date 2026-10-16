@@ -31,6 +31,13 @@ enum class OpCode : std::uint8_t {
   ReadArray,    // read next DATA value into array[operand][indices]
   Restore,      // reset DATA pointer
   SetOptionBase,// set OPTION BASE
+  Open,         // OPEN filenum AS filename (mode)
+  Close,        // CLOSE filenum
+  PrintFile,    // PRINT #filenum, values
+  InputFile,    // INPUT #filenum, variable
+  Eof,          // push EOF(filenum)
+  OnError,      // ON ERROR GOTO line
+  Resume,       // RESUME [NEXT | line]
   Halt,         // stop execution
 };
 

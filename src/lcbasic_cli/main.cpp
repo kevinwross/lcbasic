@@ -2,6 +2,7 @@
 #include "parser.h"
 #include "compiler.h"
 #include "vm.h"
+#include "host.h"
 #include "ansi_screen.h"
 #include "headless_screen.h"
 
@@ -62,8 +63,12 @@ static std::vector<std::pair<std::int32_t, std::string>> load_bas_file(
   return lines;
 }
 
+// Execute a single direct-mode statement (no line number).
+static bool run_direct_statement(const std::string& source, Screen& screen,
+                                 Host& host);
+
 // Compile a Program and run it on the given screen.
-static bool run_program(const Program& program, Screen& screen) {
+static bool run_program(const Program& program, Screen& screen, Host& host) {
   Compiler compiler(program);
   if (!compiler.compile()) {
     for (const auto& err : compiler.errors()) {
@@ -72,7 +77,7 @@ static bool run_program(const Program& program, Screen& screen) {
     return false;
   }
 
-  Vm vm(screen);
+  Vm vm(screen, host);
   if (!vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
               compiler.variable_table(), compiler.variable_names(),
               compiler.data_values())) {
@@ -84,34 +89,9 @@ static bool run_program(const Program& program, Screen& screen) {
   return true;
 }
 
-// Execute a single direct-mode statement (no line number).
-static bool run_direct_statement(const std::string& source, Screen& screen) {
-  Lexer lexer(source, 0);
-  auto tokens = lexer.scan();
-
-  Parser parser(std::move(tokens));
-  // Direct mode: wrap the statement with a dummy line number 0.
-  // We need a parser variant that parses a statement without a line number.
-  // For simplicity, prepend "0 " to make it look like a numbered line.
-  std::string numbered = "0 " + source;
-  Lexer lexer2(numbered, 0);
-  auto tokens2 = lexer2.scan();
-
-  Parser parser2(std::move(tokens2));
-  if (!parser2.parse()) {
-    for (const auto& err : parser2.errors()) {
-      std::cerr << "lcbasic: " << err << "\n";
-    }
-    return false;
-  }
-
-  Program program = parser2.release_program();
-  return run_program(program, screen);
-}
-
 // ---------- REPL ----------
 
-static void repl(Screen& screen) {
+static void repl(Screen& screen, Host& host) {
   std::cout << "lcbasic direct mode. Type statements and press RETURN.\n";
   std::cout << "Type 'bye' to exit.\n\n";
 
@@ -195,7 +175,7 @@ static void repl(Screen& screen) {
           program.lines.push_back(std::move(s));
         }
       }
-      run_program(program, screen);
+      run_program(program, screen, host);
     run_done:;
     } else if (rest.empty() && had_line_number) {
       // Just a line number with no statement: delete that line.
@@ -205,11 +185,34 @@ static void repl(Screen& screen) {
           store.lines.end());
     } else {
       // Direct-mode statement (no line number): execute immediately.
-      if (!run_direct_statement(input, screen)) {
+      if (!run_direct_statement(input, screen, host)) {
         // Error already printed.
       }
     }
   }
+}
+
+// Execute a single direct-mode statement (no line number).
+static bool run_direct_statement(const std::string& source, Screen& screen,
+                                 Host& host) {
+  Lexer lexer(source, 0);
+  auto tokens = lexer.scan();
+
+  // Direct mode: wrap the statement with a dummy line number 0.
+  std::string numbered = "0 " + source;
+  Lexer lexer2(numbered, 0);
+  auto tokens2 = lexer2.scan();
+
+  Parser parser2(std::move(tokens2));
+  if (!parser2.parse()) {
+    for (const auto& err : parser2.errors()) {
+      std::cerr << "lcbasic: " << err << "\n";
+    }
+    return false;
+  }
+
+  Program program = parser2.release_program();
+  return run_program(program, screen, host);
 }
 
 // ---------- main ----------
@@ -217,9 +220,9 @@ static void repl(Screen& screen) {
 int main(int argc, char** argv) {
   if (argc < 2) {
     // No argument: start direct-mode REPL with headless screen.
-    // (In the future, use AnsiScreen for interactive terminal.)
+    RealHost host;
     HeadlessScreen screen(25, 80);
-    repl(screen);
+    repl(screen, host);
     return 0;
   }
 
@@ -253,8 +256,9 @@ int main(int argc, char** argv) {
     }
   }
 
+  RealHost host;
   AnsiScreen screen;
-  if (!run_program(program, screen)) {
+  if (!run_program(program, screen, host)) {
     screen.refresh();
     return 1;
   }

@@ -6,6 +6,7 @@ CXXFLAGS := -std=c++20 -Wall -Wextra -Wpedantic -g -O0
 LDFLAGS := -lncurses
 
 CORE_SRC := src/lcbasic_core/value.cpp \
+            src/lcbasic_core/host.cpp \
             src/lcbasic_core/lexer.cpp \
             src/lcbasic_core/parser.cpp \
             src/lcbasic_core/compiler.cpp \

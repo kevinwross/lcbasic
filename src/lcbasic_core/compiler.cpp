@@ -202,9 +202,60 @@ void Compiler::compile_statement(const Statement& stmt) {
           emit(OpCode::Restore, line);
         } else if constexpr (std::is_same_v<T, DefFnStmt>) {
           // DEF FN is a compile-time definition; no code emitted.
-          // The VM stores function definitions separately.
-          // For M2, we just record it (no-op at compile time).
           (void)s;
+        } else if constexpr (std::is_same_v<T, OpenStmt>) {
+          // OPEN filenum AS filename (mode)
+          // Stack order at runtime: [filename, mode, filenum] (filenum on top)
+          compile_expr(*s.filename);
+          auto mode_idx = add_constant(Value(s.mode));
+          emit(OpCode::Constant, line, mode_idx);
+          auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
+          emit(OpCode::Constant, line, fn_idx);
+          emit(OpCode::Open, line, 0);
+        } else if constexpr (std::is_same_v<T, CloseStmt>) {
+          auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
+          emit(OpCode::Constant, line, fn_idx);
+          emit(OpCode::Close, line, 0);
+        } else if constexpr (std::is_same_v<T, PrintFileStmt>) {
+          // PRINT #filenum, values
+          for (std::size_t i = 0; i < s.args.size(); ++i) {
+            auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
+            emit(OpCode::Constant, line, fn_idx);
+            compile_expr(*s.args[i]);
+            if (i > 0) {
+              auto sp_idx = add_constant(Value(std::string(" ")));
+              emit(OpCode::Constant, line, sp_idx);
+              emit(OpCode::Print, line);
+            }
+            emit(OpCode::PrintFile, line, 0);
+          }
+          if (!s.trailing_separator) {
+            auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
+            emit(OpCode::Constant, line, fn_idx);
+            auto nl_idx = add_constant(Value(std::string("\n")));
+            emit(OpCode::Constant, line, nl_idx);
+            emit(OpCode::PrintFile, line, 0);
+          }
+        } else if constexpr (std::is_same_v<T, InputFileStmt>) {
+          auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
+          emit(OpCode::Constant, line, fn_idx);
+          for (const auto& var : s.vars) {
+            std::uint8_t vidx = variable_index(var);
+            emit(OpCode::InputFile, line, vidx);
+          }
+        } else if constexpr (std::is_same_v<T, OnErrorStmt>) {
+          emit(OpCode::OnError, line, 0);
+          record_fixup(code_.size() - 1, s.target_line);
+        } else if constexpr (std::is_same_v<T, ResumeStmt>) {
+          if (s.next) {
+            emit(OpCode::Resume, line, 1); // operand=1 means NEXT
+          } else if (s.target_line >= 0) {
+            emit(OpCode::Resume, line, 0);
+            record_fixup(code_.size() - 1, s.target_line);
+          } else {
+            emit(OpCode::Resume, line, 0); // operand=0 means same line
+            record_fixup(code_.size() - 1, line);
+          }
         }
       },
       stmt.data);

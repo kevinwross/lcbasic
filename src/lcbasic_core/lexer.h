@@ -44,6 +44,12 @@ enum class TokenType {
   KeywordStep,
   KeywordDef,
   KeywordFn,
+  KeywordAppend,
+  KeywordHash,  // #
+  KeywordOpen,
+  KeywordClose,
+  KeywordOutput,
+  KeywordAs,
 
   // Punctuation
   Newline,

@@ -95,11 +95,39 @@ struct DefFnStmt {
   std::unique_ptr<Expr> body;
 };
 
+struct OpenStmt {
+  std::int32_t filenum;
+  std::string mode;   // "I", "O", "A"
+  std::unique_ptr<Expr> filename;
+};
+
+struct CloseStmt { std::int32_t filenum; };
+
+struct PrintFileStmt {
+  std::int32_t filenum;
+  std::vector<std::unique_ptr<Expr>> args;
+  bool trailing_separator = false;
+};
+
+struct InputFileStmt {
+  std::int32_t filenum;
+  std::vector<std::string> vars;
+};
+
+struct OnErrorStmt { std::int32_t target_line; };
+
+struct ResumeStmt {
+  bool next = false;   // RESUME NEXT
+  std::int32_t target_line = -1; // RESUME line
+};
+
 struct Statement {
   std::int32_t line_number;
   std::variant<PrintStmt, LetStmt, GotoStmt, IfStmt, ForStmt, NextStmt,
                GosubStmt, ReturnStmt, EndStmt, StopStmt, DimStmt,
-               OptionBaseStmt, DataStmt, ReadStmt, RestoreStmt, DefFnStmt>
+               OptionBaseStmt, DataStmt, ReadStmt, RestoreStmt, DefFnStmt,
+               OpenStmt, CloseStmt, PrintFileStmt, InputFileStmt,
+               OnErrorStmt, ResumeStmt>
       data;
 };
 

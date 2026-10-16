@@ -64,21 +64,46 @@ bool Parser::parse_statement() {
     stmt.line_number = line_number;
 
     if (check(TokenType::KeywordPrint)) {
-      advance();
-      PrintStmt print;
-      if (!check(TokenType::Newline) && !check(TokenType::Colon) &&
-          !is_at_end()) {
+      // Look ahead: PRINT #filenum is file output, otherwise regular PRINT.
+      std::size_t print_save = current_;
+      advance(); // consume PRINT
+      bool is_print_file = check(TokenType::KeywordHash);
+      current_ = print_save; // put PRINT back
+      if (is_print_file) {
+        match(TokenType::KeywordPrint);
+        consume(TokenType::KeywordHash, "expected '#' after PRINT");
+        PrintFileStmt pfile;
+        consume(TokenType::Number, "expected file number after '#'");
+        pfile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+        if (match(TokenType::Comma)) {
+        }
         do {
           auto expr = parse_expression();
           if (!expr) return false;
-          print.args.push_back(std::move(expr));
+          pfile.args.push_back(std::move(expr));
         } while (match(TokenType::Comma) || match(TokenType::Semicolon));
-        print.trailing_separator =
+        pfile.trailing_separator =
             (current_ > 0 &&
              (tokens_[current_ - 1].type == TokenType::Comma ||
               tokens_[current_ - 1].type == TokenType::Semicolon));
+        stmt.data = std::move(pfile);
+      } else {
+        match(TokenType::KeywordPrint);
+        PrintStmt print;
+        if (!check(TokenType::Newline) && !check(TokenType::Colon) &&
+            !is_at_end()) {
+          do {
+            auto expr = parse_expression();
+            if (!expr) return false;
+            print.args.push_back(std::move(expr));
+          } while (match(TokenType::Comma) || match(TokenType::Semicolon));
+          print.trailing_separator =
+              (current_ > 0 &&
+               (tokens_[current_ - 1].type == TokenType::Comma ||
+                tokens_[current_ - 1].type == TokenType::Semicolon));
+        }
+        stmt.data = std::move(print);
       }
-      stmt.data = std::move(print);
     } else if (match(TokenType::KeywordLet)) {
       consume(TokenType::Identifier, "expected variable name after LET");
       LetStmt let;
@@ -278,6 +303,77 @@ bool Parser::parse_statement() {
       def.body = parse_expression();
       if (!def.body) return false;
       stmt.data = std::move(def);
+    } else if (match(TokenType::KeywordOpen)) {
+      OpenStmt open;
+      open.filename = parse_expression();
+      if (!open.filename) return false;
+      consume(TokenType::KeywordFor, "expected FOR after OPEN filename");
+      if (match(TokenType::KeywordOutput)) open.mode = "O";
+      else if (match(TokenType::KeywordInput)) open.mode = "I";
+      else if (match(TokenType::KeywordAppend)) open.mode = "A";
+      else error_at_current("expected INPUT/OUTPUT/APPEND after FOR");
+      consume(TokenType::KeywordAs, "expected AS after mode");
+      consume(TokenType::KeywordHash, "expected '#' after AS");
+      consume(TokenType::Number, "expected file number after '#'");
+      open.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      stmt.data = std::move(open);
+    } else if (match(TokenType::KeywordClose)) {
+      CloseStmt close;
+      consume(TokenType::KeywordHash, "expected '#' after CLOSE");
+      consume(TokenType::Number, "expected file number after '#'");
+      close.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      stmt.data = std::move(close);
+    } else if (match(TokenType::KeywordPrint)) {
+      consume(TokenType::KeywordHash, "expected '#' after PRINT");
+      PrintFileStmt pfile;
+      consume(TokenType::Number, "expected file number after '#'");
+      pfile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      if (match(TokenType::Comma)) {
+        // optional comma after filenum
+      }
+      do {
+        auto expr = parse_expression();
+        if (!expr) return false;
+        pfile.args.push_back(std::move(expr));
+      } while (match(TokenType::Comma) || match(TokenType::Semicolon));
+      pfile.trailing_separator =
+          (current_ > 0 &&
+           (tokens_[current_ - 1].type == TokenType::Comma ||
+            tokens_[current_ - 1].type == TokenType::Semicolon));
+      stmt.data = std::move(pfile);
+    } else if (match(TokenType::KeywordInput)) {
+      consume(TokenType::KeywordHash, "expected '#' after INPUT");
+      InputFileStmt ifile;
+      consume(TokenType::Number, "expected file number after '#'");
+      ifile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      if (match(TokenType::Comma)) {
+        // optional comma
+      }
+      do {
+        if (!check(TokenType::Identifier)) {
+          error_at_current("expected variable name after INPUT #");
+          return false;
+        }
+        Token var_tok = advance();
+        ifile.vars.push_back(var_tok.lexeme);
+      } while (match(TokenType::Comma));
+      stmt.data = std::move(ifile);
+    } else if (match(TokenType::KeywordOn)) {
+      consume(TokenType::KeywordError, "expected ERROR after ON");
+      consume(TokenType::KeywordGoto, "expected GOTO after ON ERROR");
+      OnErrorStmt oerr;
+      consume(TokenType::Number, "expected line number after ON ERROR GOTO");
+      oerr.target_line = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      stmt.data = std::move(oerr);
+    } else if (match(TokenType::KeywordResume)) {
+      ResumeStmt res;
+      if (match(TokenType::KeywordNext)) {
+        res.next = true;
+      } else if (check(TokenType::Number)) {
+        Token t = advance();
+        res.target_line = static_cast<std::int32_t>(t.number);
+      }
+      stmt.data = std::move(res);
     } else {
       error_at_current("unknown statement");
       return false;
@@ -298,16 +394,39 @@ std::unique_ptr<Statement> Parser::parse_statement_no_line() {
   stmt->line_number = -1;
 
   if (check(TokenType::KeywordPrint)) {
-    advance();
-    PrintStmt print;
-    while (!is_at_end() && !check(TokenType::Newline) &&
-           !check(TokenType::Colon) && !check(TokenType::KeywordElse)) {
-      auto expr = parse_expression();
-      if (!expr) return nullptr;
-      print.args.push_back(std::move(expr));
-      if (!match(TokenType::Comma) && !match(TokenType::Semicolon)) break;
+    // Look ahead: PRINT #filenum is file output.
+    std::size_t print_save = current_;
+    advance(); // PRINT
+    bool is_print_file = check(TokenType::KeywordHash);
+    current_ = print_save;
+    if (is_print_file) {
+      match(TokenType::KeywordPrint);
+      consume(TokenType::KeywordHash, "expected '#' after PRINT");
+      PrintFileStmt pfile;
+      consume(TokenType::Number, "expected file number after '#'");
+      pfile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      if (match(TokenType::Comma)) {
+      }
+      while (!is_at_end() && !check(TokenType::Newline) &&
+             !check(TokenType::Colon) && !check(TokenType::KeywordElse)) {
+        auto expr = parse_expression();
+        if (!expr) return nullptr;
+        pfile.args.push_back(std::move(expr));
+        if (!match(TokenType::Comma) && !match(TokenType::Semicolon)) break;
+      }
+      stmt->data = std::move(pfile);
+    } else {
+      match(TokenType::KeywordPrint);
+      PrintStmt print;
+      while (!is_at_end() && !check(TokenType::Newline) &&
+             !check(TokenType::Colon) && !check(TokenType::KeywordElse)) {
+        auto expr = parse_expression();
+        if (!expr) return nullptr;
+        print.args.push_back(std::move(expr));
+        if (!match(TokenType::Comma) && !match(TokenType::Semicolon)) break;
+      }
+      stmt->data = std::move(print);
     }
-    stmt->data = std::move(print);
   } else if (match(TokenType::KeywordGoto)) {
     consume(TokenType::Number, "expected line number after GOTO");
     GotoStmt g;

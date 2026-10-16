@@ -1,5 +1,6 @@
 add_library(lcbasic_core STATIC
   value.cpp
+  host.cpp
   lexer.cpp
   parser.cpp
   compiler.cpp

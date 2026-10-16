@@ -1,13 +1,13 @@
 #include "test_runner.h"
 #include "compiler.h"
 #include "headless_screen.h"
+#include "host.h"
 #include "lexer.h"
 #include "parser.h"
 #include "vm.h"
 
 #include <sstream>
-
-#include <memory>
+#include <cstdio>
 
 static std::unique_ptr<Program> compile_source(const std::string& source) {
   auto program = std::make_unique<Program>();
@@ -17,7 +17,6 @@ static std::unique_ptr<Program> compile_source(const std::string& source) {
   while (std::getline(iss, line)) {
     if (line.empty()) continue;
 
-    // Extract line number.
     std::istringstream liss(line);
     std::int32_t line_number = 0;
     liss >> line_number;
@@ -28,7 +27,6 @@ static std::unique_ptr<Program> compile_source(const std::string& source) {
     std::size_t start = rest.find_first_not_of(" \t");
     if (start != std::string::npos) rest = rest.substr(start);
 
-    // Prepend line number so the parser sees it as the first token.
     std::string numbered = std::to_string(line_number) + " " + rest;
     Lexer lexer(numbered, line_number);
     auto tokens = lexer.scan();
@@ -44,6 +42,14 @@ static std::unique_ptr<Program> compile_source(const std::string& source) {
   return program;
 }
 
+static bool run_compiled(Compiler& compiler, HeadlessScreen& screen) {
+  RealHost host;
+  Vm vm(screen, host);
+  return vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
+                compiler.variable_table(), compiler.variable_names(),
+                compiler.data_values());
+}
+
 TEST(e2e_print_string_on_headless_screen) {
   auto program = compile_source("10 PRINT \"Hello\"");
   REQUIRE(program != nullptr);
@@ -52,10 +58,7 @@ TEST(e2e_print_string_on_headless_screen) {
   REQUIRE(compiler.compile());
 
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
 
   screen.refresh();
   CHECK(screen.last_output() == "Hello\n");
@@ -69,10 +72,7 @@ TEST(e2e_print_number_on_headless_screen) {
   REQUIRE(compiler.compile());
 
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
 
   screen.refresh();
   CHECK(screen.last_output() == "42\n");
@@ -86,10 +86,7 @@ TEST(e2e_variables_and_arithmetic) {
   REQUIRE(compiler.compile());
 
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
 
   screen.refresh();
   CHECK(screen.last_output() == "7\n");
@@ -104,10 +101,7 @@ TEST(e2e_goto) {
   REQUIRE(compiler.compile());
 
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
 
   screen.refresh();
   CHECK(screen.last_output() == "A\nC\n");
@@ -122,10 +116,7 @@ TEST(e2e_if_then) {
   REQUIRE(compiler.compile());
 
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
 
   screen.refresh();
   CHECK(screen.last_output() == "YES\n");
@@ -140,17 +131,13 @@ TEST(e2e_for_loop) {
   REQUIRE(compiler.compile());
 
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
 
   screen.refresh();
   CHECK(screen.last_output() == "1\n2\n3\n");
 }
 
 TEST(e2e_gosub_return) {
-  // Subroutines go after END in GW-BASIC.
   auto program = compile_source(
       "10 PRINT \"A\"\n20 GOSUB 60\n30 PRINT \"B\"\n40 END\n60 PRINT \"C\"\n70 RETURN");
   REQUIRE(program != nullptr);
@@ -159,10 +146,7 @@ TEST(e2e_gosub_return) {
   REQUIRE(compiler.compile());
 
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
 
   screen.refresh();
   CHECK(screen.last_output() == "A\nC\nB\n");
@@ -174,10 +158,7 @@ TEST(e2e_type_suffix_integer) {
   Compiler compiler(*program);
   REQUIRE(compiler.compile());
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
   CHECK(screen.last_output() == "7\n");
 }
@@ -190,10 +171,7 @@ TEST(e2e_dim_array) {
   Compiler compiler(*program);
   REQUIRE(compiler.compile());
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
   CHECK(screen.last_output() == "10\n20\n30\n");
 }
@@ -206,10 +184,7 @@ TEST(e2e_data_read) {
   Compiler compiler(*program);
   REQUIRE(compiler.compile());
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
   CHECK(screen.last_output() == "10\n20\n30\n");
 }
@@ -221,10 +196,7 @@ TEST(e2e_data_read_string) {
   Compiler compiler(*program);
   REQUIRE(compiler.compile());
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
   CHECK(screen.last_output() == "hello\n");
 }
@@ -237,10 +209,7 @@ TEST(e2e_restore) {
   Compiler compiler(*program);
   REQUIRE(compiler.compile());
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
   CHECK(screen.last_output() == "1\n2\n1\n");
 }
@@ -252,10 +221,41 @@ TEST(e2e_option_base) {
   Compiler compiler(*program);
   REQUIRE(compiler.compile());
   HeadlessScreen screen(25, 80);
-  Vm vm(screen);
-  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table(), compiler.variable_names(),
-                 compiler.data_values()));
+  REQUIRE(run_compiled(compiler, screen));
   screen.refresh();
   CHECK(screen.last_output() == "100\n");
+}
+
+TEST(e2e_file_write_read) {
+  // Write to a temp file, then read it back.
+  auto program = compile_source(
+      "10 OPEN \"T\" FOR OUTPUT AS #1\n20 PRINT #1, \"hello file\"\n30 CLOSE #1\n"
+      "40 OPEN \"T\" FOR INPUT AS #1\n50 INPUT #1, X$\n60 CLOSE #1\n70 PRINT X$");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  REQUIRE(run_compiled(compiler, screen));
+  screen.refresh();
+  CHECK(screen.last_output() == "hello file\n");
+  // Clean up
+  std::remove("T");
+}
+
+TEST(e2e_error_handling) {
+  // Trigger a runtime error by opening a nonexistent file.
+  auto program = compile_source(
+      "10 ON ERROR GOTO 100\n20 OPEN \"nonexistent.txt\" FOR INPUT AS #1\n"
+      "30 PRINT \"after open\"\n40 GOTO 200\n"
+      "100 PRINT \"error: \"; ERR\n110 PRINT \"line: \"; ERL\n"
+      "120 RESUME NEXT\n200 END");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  REQUIRE(run_compiled(compiler, screen));
+  screen.refresh();
+  std::string out = screen.last_output();
+  CHECK(out.find("error:") != std::string::npos);
+  CHECK(out.find("line:") != std::string::npos);
 }
