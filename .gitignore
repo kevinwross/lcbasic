@@ -17,3 +17,7 @@ install_manifest.txt
 compile_commands.json
 Testing/
 *.log
+
+# Stray BASIC files from manual runs / tests
+*.bas
+!fixtures/**
