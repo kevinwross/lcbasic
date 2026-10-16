@@ -317,15 +317,11 @@ int main(int argc, char** argv) {
   }
 
   if (program_path.empty()) {
-    // No program: start direct-mode REPL.
+    // No program: start the direct-mode REPL. Use a stdout screen so that
+    // RUN and direct-mode PRINT statements are visible on the terminal.
     RealHost host;
-    if (headless) {
-      StdoutScreen screen;
-      repl(screen, host);
-    } else {
-      HeadlessScreen screen(25, 80);
-      repl(screen, host);
-    }
+    StdoutScreen screen;
+    repl(screen, host);
     return 0;
   }
 
