@@ -14,6 +14,7 @@ std::uint8_t Compiler::variable_index(const std::string& name) {
   if (it != variable_table_.end()) return it->second;
   std::uint8_t idx = static_cast<std::uint8_t>(variable_table_.size());
   variable_table_.emplace(name, idx);
+  variable_names_.push_back(name);
   return idx;
 }
 
@@ -42,23 +43,17 @@ void Compiler::resolve_fixups() {
                         std::to_string(fixup.target_line));
       continue;
     }
-    // Patch the operand (target line -> PC offset).
     code_[fixup.code_index].operand = static_cast<std::uint32_t>(*pc);
   }
 }
 
 void Compiler::compile_program() {
-  // Assign PC offsets to each line (line table).
   for (const auto& [line_number, stmt] : program_.lines) {
     line_table_.push_back(LineEntry{line_number, next_pc()});
     compile_statement(stmt);
   }
-  // Each line implicitly falls through to the next; after the last line,
-  // emit Halt.
   emit(OpCode::Halt, program_.lines.empty() ? 0
                                             : program_.lines.back().first);
-
-  // Resolve forward line references (GOTO, IF/THEN line, GOSUB, FOR/NEXT).
   resolve_fixups();
 }
 
@@ -72,8 +67,6 @@ void Compiler::compile_statement(const Statement& stmt) {
           for (std::size_t i = 0; i < s.args.size(); ++i) {
             compile_expr(*s.args[i]);
             if (i > 0) {
-              // Print a separator: comma = tab zone, semicolon = nothing.
-              // For M0/M1, just print a space between items.
               auto sp_idx = add_constant(Value(std::string(" ")));
               emit(OpCode::Constant, line, sp_idx);
               emit(OpCode::Print, line);
@@ -81,32 +74,44 @@ void Compiler::compile_statement(const Statement& stmt) {
             emit(OpCode::Print, line);
           }
           if (!s.trailing_separator) {
-            // GW-BASIC PRINT defaults to a trailing newline.
             auto nl_idx = add_constant(Value(std::string("\n")));
             emit(OpCode::Constant, line, nl_idx);
             emit(OpCode::Print, line);
           }
         } else if constexpr (std::is_same_v<T, LetStmt>) {
-          compile_expr(*s.value);
-          std::uint8_t vidx = variable_index(s.var);
-          emit(OpCode::StoreVar, line, vidx);
+          if (!s.indices.empty()) {
+            // Array assignment: arr(i, j) = value
+            // Push indices first (reverse order for stack: last index
+            // pushed last, so ArrayStore pops them in reverse).
+            // We push them in order; ArrayStore will pop them.
+            for (auto& idx : s.indices) {
+              compile_expr(*idx);
+            }
+            compile_expr(*s.value);
+            std::uint8_t vidx = variable_index(s.var);
+            std::uint8_t num_indices =
+                static_cast<std::uint8_t>(s.indices.size());
+            std::uint32_t operand =
+                (static_cast<std::uint32_t>(num_indices) << 8) | vidx;
+            emit(OpCode::ArrayStore, line, operand);
+          } else {
+            compile_expr(*s.value);
+            std::uint8_t vidx = variable_index(s.var);
+            emit(OpCode::StoreVar, line, vidx);
+          }
         } else if constexpr (std::is_same_v<T, GotoStmt>) {
-          emit(OpCode::Jmp, line, 0); // placeholder, fixed up later
+          emit(OpCode::Jmp, line, 0);
           record_fixup(code_.size() - 1, s.target_line);
         } else if constexpr (std::is_same_v<T, IfStmt>) {
           compile_expr(*s.condition);
-          // If condition is false, skip the THEN branch.
-          emit(OpCode::JmpFalse, line, 0); // placeholder
+          emit(OpCode::JmpFalse, line, 0);
           std::size_t jmp_false_idx = code_.size() - 1;
 
           if (s.then_line >= 0) {
-            // THEN line_number: jump to that line.
-            emit(OpCode::Jmp, line, 0); // placeholder
+            emit(OpCode::Jmp, line, 0);
             record_fixup(code_.size() - 1, s.then_line);
           } else {
-            // THEN statement(s): compile inline.
             for (auto& inner : s.then_stmts) {
-              // inner->line_number is -1; use the enclosing line.
               Statement inner_stmt = std::move(*inner);
               inner_stmt.line_number = line;
               compile_statement(inner_stmt);
@@ -114,17 +119,14 @@ void Compiler::compile_statement(const Statement& stmt) {
           }
 
           if (s.else_line >= 0 || !s.else_stmts.empty()) {
-            // Skip the ELSE branch after THEN.
-            emit(OpCode::Jmp, line, 0); // placeholder
+            emit(OpCode::Jmp, line, 0);
             std::size_t skip_else_idx = code_.size() - 1;
-
-            // Patch the JmpFalse target to here (start of ELSE).
             auto here_pc = next_pc();
             code_[jmp_false_idx].operand =
                 static_cast<std::uint32_t>(here_pc);
 
             if (s.else_line >= 0) {
-              emit(OpCode::Jmp, line, 0); // placeholder
+              emit(OpCode::Jmp, line, 0);
               record_fixup(code_.size() - 1, s.else_line);
             } else {
               for (auto& inner : s.else_stmts) {
@@ -133,46 +135,26 @@ void Compiler::compile_statement(const Statement& stmt) {
                 compile_statement(inner_stmt);
               }
             }
-
-            // Patch the skip-ELSE jump to after the ELSE block.
             auto after_else_pc = next_pc();
             code_[skip_else_idx].operand =
                 static_cast<std::uint32_t>(after_else_pc);
           } else {
-            // No ELSE: patch JmpFalse to continue after THEN.
             auto after_then_pc = next_pc();
             code_[jmp_false_idx].operand =
                 static_cast<std::uint32_t>(after_then_pc);
           }
         } else if constexpr (std::is_same_v<T, ForStmt>) {
-          // FOR var = start TO end [STEP step]
           compile_expr(*s.start);
           std::uint8_t vidx = variable_index(s.var);
-          emit(OpCode::StoreVar, line, vidx); // var = start
-
-          compile_expr(*s.end);   // push end
-          compile_expr(*s.step);  // push step
-
-          emit(OpCode::ForInit, line, vidx); // create ForFrame
-          std::size_t for_init_idx = code_.size() - 1;
-          std::size_t body_start_pc = next_pc();
-
-          // Note: the FOR body is the statements following this FOR until
-          // the matching NEXT. Since our program is a flat list, the body
-          // statements are compiled as subsequent lines/statements. The
-          // ForNext instruction will jump back to body_start_pc.
-          // We record body_start_pc in the ForInit operand? No - ForInit
-          // operand is the variable index. The VM's ForFrame stores the
-          // body_start_pc (set to PC after ForInit).
-
-          (void)for_init_idx;
-          (void)body_start_pc;
+          emit(OpCode::StoreVar, line, vidx);
+          compile_expr(*s.end);
+          compile_expr(*s.step);
+          emit(OpCode::ForInit, line, vidx);
         } else if constexpr (std::is_same_v<T, NextStmt>) {
-          // NEXT var: handled at runtime via ForNext instruction.
           std::uint8_t vidx = variable_index(s.var);
           emit(OpCode::ForNext, line, vidx);
         } else if constexpr (std::is_same_v<T, GosubStmt>) {
-          emit(OpCode::Call, line, 0); // placeholder
+          emit(OpCode::Call, line, 0);
           record_fixup(code_.size() - 1, s.target_line);
         } else if constexpr (std::is_same_v<T, ReturnStmt>) {
           emit(OpCode::Ret, line);
@@ -180,6 +162,49 @@ void Compiler::compile_statement(const Statement& stmt) {
           emit(OpCode::Halt, line);
         } else if constexpr (std::is_same_v<T, StopStmt>) {
           emit(OpCode::Halt, line);
+        } else if constexpr (std::is_same_v<T, DimStmt>) {
+          // Evaluate each upper bound expression, push onto stack.
+          for (std::int32_t ub : s.upper_bounds) {
+            auto idx = add_constant(Value(static_cast<double>(ub)));
+            emit(OpCode::Constant, line, idx);
+          }
+          std::uint8_t vidx = variable_index(s.name);
+          std::uint8_t num_dims =
+              static_cast<std::uint8_t>(s.upper_bounds.size());
+          // Encode var index in low byte, num_dims in high byte.
+          std::uint32_t operand =
+              (static_cast<std::uint32_t>(num_dims) << 8) | vidx;
+          emit(OpCode::Dim, line, operand);
+        } else if constexpr (std::is_same_v<T, OptionBaseStmt>) {
+          emit(OpCode::SetOptionBase, line,
+               static_cast<std::uint32_t>(s.base));
+        } else if constexpr (std::is_same_v<T, DataStmt>) {
+          // Collect DATA values for the VM's DataPool (runtime init).
+          for (const auto& v : s.values) {
+            data_values_.push_back(v);
+          }
+          // DATA is a non-executing statement; no code emitted.
+        } else if constexpr (std::is_same_v<T, ReadStmt>) {
+          for (const auto& target : s.targets) {
+            if (target.is_array) {
+              // Compile index expressions
+              for (auto& idx : target.indices) {
+                compile_expr(*idx);
+              }
+              std::uint8_t vidx = variable_index(target.name);
+              emit(OpCode::ReadArray, line, vidx);
+            } else {
+              std::uint8_t vidx = variable_index(target.name);
+              emit(OpCode::ReadVar, line, vidx);
+            }
+          }
+        } else if constexpr (std::is_same_v<T, RestoreStmt>) {
+          emit(OpCode::Restore, line);
+        } else if constexpr (std::is_same_v<T, DefFnStmt>) {
+          // DEF FN is a compile-time definition; no code emitted.
+          // The VM stores function definitions separately.
+          // For M2, we just record it (no-op at compile time).
+          (void)s;
         }
       },
       stmt.data);
@@ -198,6 +223,16 @@ void Compiler::compile_expr(const Expr& expr) {
         } else if constexpr (std::is_same_v<T, VariableExpr>) {
           std::uint8_t vidx = variable_index(arg.name);
           emit(OpCode::LoadVar, 0, vidx);
+        } else if constexpr (std::is_same_v<T, ArrayRefExpr>) {
+          for (auto& idx : arg.indices) {
+            compile_expr(*idx);
+          }
+          std::uint8_t vidx = variable_index(arg.name);
+          std::uint8_t num_indices =
+              static_cast<std::uint8_t>(arg.indices.size());
+          std::uint32_t operand =
+              (static_cast<std::uint32_t>(num_indices) << 8) | vidx;
+          emit(OpCode::ArrayLoad, 0, operand);
         } else if constexpr (std::is_same_v<T, BinaryExpr>) {
           compile_expr(*arg.left);
           compile_expr(*arg.right);

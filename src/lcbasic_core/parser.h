@@ -19,6 +19,10 @@ struct Statement;
 struct NumberExpr { double value; };
 struct StringExpr { std::string value; };
 struct VariableExpr { std::string name; };
+struct ArrayRefExpr {
+  std::string name;
+  std::vector<std::unique_ptr<Expr>> indices;
+};
 struct BinaryExpr {
   std::unique_ptr<Expr> left;
   TokenType op;
@@ -26,26 +30,29 @@ struct BinaryExpr {
 };
 
 struct Expr {
-  std::variant<NumberExpr, StringExpr, VariableExpr, BinaryExpr> data;
+  std::variant<NumberExpr, StringExpr, VariableExpr, ArrayRefExpr,
+               BinaryExpr>
+      data;
 };
 
 // ---------- Statements ----------
 
 struct PrintStmt {
   std::vector<std::unique_ptr<Expr>> args;
-  bool trailing_separator = false;  // comma/semicolon suppresses newline
+  bool trailing_separator = false;
 };
 
 struct LetStmt {
   std::string var;
   std::unique_ptr<Expr> value;
+  std::vector<std::unique_ptr<Expr>> indices; // non-empty = array assignment
 };
 
 struct GotoStmt { std::int32_t target_line; };
 
 struct IfStmt {
   std::unique_ptr<Expr> condition;
-  std::int32_t then_line = -1;  // -1 means THEN is followed by statement(s)
+  std::int32_t then_line = -1;
   std::vector<std::unique_ptr<Statement>> then_stmts;
   std::int32_t else_line = -1;
   std::vector<std::unique_ptr<Statement>> else_stmts;
@@ -63,15 +70,40 @@ struct ReturnStmt {};
 struct EndStmt {};
 struct StopStmt {};
 
+struct DimStmt {
+  std::string name;
+  VarType type = VarType::VT_DBL;
+  std::vector<std::int32_t> upper_bounds; // inclusive per dimension
+};
+
+struct OptionBaseStmt { std::int32_t base; };
+
+struct DataStmt { std::vector<Value> values; };
+
+struct ReadTarget {
+  bool is_array = false;
+  std::string name;
+  std::vector<std::unique_ptr<Expr>> indices; // for array refs
+};
+struct ReadStmt { std::vector<ReadTarget> targets; };
+
+struct RestoreStmt {};
+
+struct DefFnStmt {
+  std::string name;
+  std::string param;
+  std::unique_ptr<Expr> body;
+};
+
 struct Statement {
   std::int32_t line_number;
   std::variant<PrintStmt, LetStmt, GotoStmt, IfStmt, ForStmt, NextStmt,
-               GosubStmt, ReturnStmt, EndStmt, StopStmt>
+               GosubStmt, ReturnStmt, EndStmt, StopStmt, DimStmt,
+               OptionBaseStmt, DataStmt, ReadStmt, RestoreStmt, DefFnStmt>
       data;
 };
 
 struct Program {
-  // line number -> statements on that line
   std::vector<std::pair<std::int32_t, Statement>> lines;
 };
 
@@ -90,6 +122,7 @@ private:
   std::size_t current_ = 0;
   Program program_;
   std::vector<std::string> errors_;
+  std::int32_t option_base_ = 0; // current OPTION BASE setting
 
   bool is_at_end() const;
   Token peek() const;
@@ -102,10 +135,10 @@ private:
   // Grammar
   bool parse_statement();
   std::unique_ptr<Statement> parse_statement_no_line();
-  std::unique_ptr<Expr> parse_expression();   // entry point -> relational
+  std::unique_ptr<Expr> parse_expression();   // relational (lowest)
   std::unique_ptr<Expr> parse_relational();   // =, <>, <, <=, >, >=
   std::unique_ptr<Expr> parse_additive();     // + -
   std::unique_ptr<Expr> parse_multiplicative(); // * /
   std::unique_ptr<Expr> parse_unary();        // NOT, -
-  std::unique_ptr<Expr> parse_primary();      // number, string, var, (expr)
+  std::unique_ptr<Expr> parse_primary();      // number, string, var, array, (expr)
 };

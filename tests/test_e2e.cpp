@@ -54,7 +54,8 @@ TEST(e2e_print_string_on_headless_screen) {
   HeadlessScreen screen(25, 80);
   Vm vm(screen);
   REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table()));
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
 
   screen.refresh();
   CHECK(screen.last_output() == "Hello\n");
@@ -70,7 +71,8 @@ TEST(e2e_print_number_on_headless_screen) {
   HeadlessScreen screen(25, 80);
   Vm vm(screen);
   REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table()));
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
 
   screen.refresh();
   CHECK(screen.last_output() == "42\n");
@@ -86,7 +88,8 @@ TEST(e2e_variables_and_arithmetic) {
   HeadlessScreen screen(25, 80);
   Vm vm(screen);
   REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table()));
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
 
   screen.refresh();
   CHECK(screen.last_output() == "7\n");
@@ -103,7 +106,8 @@ TEST(e2e_goto) {
   HeadlessScreen screen(25, 80);
   Vm vm(screen);
   REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table()));
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
 
   screen.refresh();
   CHECK(screen.last_output() == "A\nC\n");
@@ -120,7 +124,8 @@ TEST(e2e_if_then) {
   HeadlessScreen screen(25, 80);
   Vm vm(screen);
   REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table()));
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
 
   screen.refresh();
   CHECK(screen.last_output() == "YES\n");
@@ -137,7 +142,8 @@ TEST(e2e_for_loop) {
   HeadlessScreen screen(25, 80);
   Vm vm(screen);
   REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table()));
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
 
   screen.refresh();
   CHECK(screen.last_output() == "1\n2\n3\n");
@@ -155,8 +161,101 @@ TEST(e2e_gosub_return) {
   HeadlessScreen screen(25, 80);
   Vm vm(screen);
   REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                 compiler.variable_table()));
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
 
   screen.refresh();
   CHECK(screen.last_output() == "A\nC\nB\n");
+}
+
+TEST(e2e_type_suffix_integer) {
+  auto program = compile_source("10 X% = 7\n20 PRINT X%");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  Vm vm(screen);
+  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
+  screen.refresh();
+  CHECK(screen.last_output() == "7\n");
+}
+
+TEST(e2e_dim_array) {
+  auto program = compile_source(
+      "10 DIM A(3)\n20 A(1) = 10\n30 A(2) = 20\n40 A(3) = 30\n"
+      "50 PRINT A(1)\n60 PRINT A(2)\n70 PRINT A(3)");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  Vm vm(screen);
+  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
+  screen.refresh();
+  CHECK(screen.last_output() == "10\n20\n30\n");
+}
+
+TEST(e2e_data_read) {
+  auto program = compile_source(
+      "10 DATA 10, 20, 30\n20 READ X\n30 READ Y\n40 READ Z\n"
+      "50 PRINT X\n60 PRINT Y\n70 PRINT Z");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  Vm vm(screen);
+  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
+  screen.refresh();
+  CHECK(screen.last_output() == "10\n20\n30\n");
+}
+
+TEST(e2e_data_read_string) {
+  auto program = compile_source(
+      "10 DATA \"hello\"\n20 READ X$\n30 PRINT X$");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  Vm vm(screen);
+  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
+  screen.refresh();
+  CHECK(screen.last_output() == "hello\n");
+}
+
+TEST(e2e_restore) {
+  auto program = compile_source(
+      "10 DATA 1, 2\n20 READ X\n30 READ Y\n40 RESTORE\n50 READ Z\n"
+      "60 PRINT X\n70 PRINT Y\n80 PRINT Z");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  Vm vm(screen);
+  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
+  screen.refresh();
+  CHECK(screen.last_output() == "1\n2\n1\n");
+}
+
+TEST(e2e_option_base) {
+  auto program = compile_source(
+      "10 OPTION BASE 1\n20 DIM A(3)\n30 A(1) = 100\n40 PRINT A(1)");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  Vm vm(screen);
+  REQUIRE(vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
+                 compiler.variable_table(), compiler.variable_names(),
+                 compiler.data_values()));
+  screen.refresh();
+  CHECK(screen.last_output() == "100\n");
 }

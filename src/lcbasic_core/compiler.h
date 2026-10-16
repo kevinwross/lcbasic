@@ -9,29 +9,35 @@
 #include <unordered_map>
 #include <vector>
 
-// Simple stack-based bytecode with line-numbered jumps for GW-BASIC control
-// flow (GOTO, IF/THEN, GOSUB, FOR/NEXT).
+// Stack-based bytecode with line-numbered jumps for GW-BASIC control flow.
 enum class OpCode : std::uint8_t {
   Constant,     // push constant[operand]
   LoadVar,      // push variable[operand]
   StoreVar,     // pop and store to variable[operand]
   Add, Sub, Mul, Div,
-  Eq, Ne, Lt, Le, Gt, Ge,   // comparison -> push 1.0 or 0.0
+  Eq, Ne, Lt, Le, Gt, Ge,
   Print,        // pop and print
   Pop,          // discard top of stack
-  Jmp,          // jump to line number stored in operand
-  JmpFalse,     // jump to line if top of stack is zero
-  Call,         // GOSUB: push return PC, jump to line
+  Jmp,          // jump to PC offset stored in operand
+  JmpFalse,     // jump to PC if top of stack is zero
+  Call,         // GOSUB: push return PC, jump to PC offset
   Ret,          // RETURN: pop return PC, jump
-  ForInit,      // FOR var=start TO end STEP step (end/step on stack)
-  ForNext,      // NEXT var: increment, check limit, jump back or exit
+  ForInit,      // FOR var=start TO end STEP step
+  ForNext,      // NEXT var
+  Dim,          // DIM array: pop upper bounds, dimension array[operand]
+  ArrayLoad,    // push array[operand][indices on stack]
+  ArrayStore,   // pop value, store to array[operand][indices on stack]
+  ReadVar,      // read next DATA value into variable[operand]
+  ReadArray,    // read next DATA value into array[operand][indices]
+  Restore,      // reset DATA pointer
+  SetOptionBase,// set OPTION BASE
   Halt,         // stop execution
 };
 
 struct Instruction {
   OpCode op;
-  std::uint32_t operand;  // constant/var index, or target line number
-  std::int32_t line;      // source line for error reporting / breakpoints
+  std::uint32_t operand;
+  std::int32_t line;
 };
 
 struct LineEntry {
@@ -39,14 +45,11 @@ struct LineEntry {
   std::size_t pc_offset;
 };
 
-// Fixup for forward line references resolved after compilation.
 struct Fixup {
-  std::size_t code_index;   // index in code_ to patch
-  std::int32_t target_line; // line number to resolve
+  std::size_t code_index;
+  std::int32_t target_line;
 };
 
-// Compiles a Program into a flat bytecode stream with a line table and
-// variable table. Forward line references are resolved via fixups.
 class Compiler {
 public:
   explicit Compiler(const Program& program);
@@ -61,8 +64,12 @@ public:
       const {
     return variable_table_;
   }
+  const std::vector<std::string>& variable_names() const {
+    return variable_names_;
+  }
 
-  // Resolve a line number to a PC offset (binary search on line_table_).
+  const std::vector<Value>& data_values() const { return data_values_; }
+
   std::optional<std::size_t> find_line(std::int32_t line) const;
 
 private:
@@ -74,6 +81,9 @@ private:
   std::vector<LineEntry> line_table_;
   std::vector<Fixup> fixups_;
   std::unordered_map<std::string, std::uint8_t> variable_table_;
+  std::vector<std::string> variable_names_;
+  std::vector<Value> data_values_;
+  std::int32_t option_base_ = 0;
 
   std::size_t next_pc() const { return code_.size(); }
 

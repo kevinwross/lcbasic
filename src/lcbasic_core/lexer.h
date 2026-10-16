@@ -42,6 +42,8 @@ enum class TokenType {
   KeywordColor,
   KeywordTo,
   KeywordStep,
+  KeywordDef,
+  KeywordFn,
 
   // Punctuation
   Newline,

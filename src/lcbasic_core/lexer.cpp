@@ -36,6 +36,8 @@ const std::unordered_map<std::string_view, TokenType> kKeywords = {
     {"COLOR", TokenType::KeywordColor},
     {"TO", TokenType::KeywordTo},
     {"STEP", TokenType::KeywordStep},
+    {"DEF", TokenType::KeywordDef},
+    {"FN", TokenType::KeywordFn},
 };
 
 }  // namespace
