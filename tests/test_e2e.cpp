@@ -45,9 +45,10 @@ static std::unique_ptr<Program> compile_source(const std::string& source) {
 static bool run_compiled(Compiler& compiler, HeadlessScreen& screen) {
   RealHost host;
   Vm vm(screen, host);
-  return vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-                compiler.variable_table(), compiler.variable_names(),
-                compiler.data_values());
+  vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
+          compiler.variable_table(), compiler.variable_names(),
+          compiler.data_values());
+  return vm.run();
 }
 
 TEST(e2e_print_string_on_headless_screen) {

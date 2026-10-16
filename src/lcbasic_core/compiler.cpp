@@ -65,7 +65,7 @@ void Compiler::compile_statement(const Statement& stmt) {
         using T = std::decay_t<decltype(s)>;
         if constexpr (std::is_same_v<T, PrintStmt>) {
           for (std::size_t i = 0; i < s.args.size(); ++i) {
-            compile_expr(*s.args[i]);
+            compile_expr(*s.args[i], line);
             if (i > 0) {
               auto sp_idx = add_constant(Value(std::string(" ")));
               emit(OpCode::Constant, line, sp_idx);
@@ -85,9 +85,9 @@ void Compiler::compile_statement(const Statement& stmt) {
             // pushed last, so ArrayStore pops them in reverse).
             // We push them in order; ArrayStore will pop them.
             for (auto& idx : s.indices) {
-              compile_expr(*idx);
+              compile_expr(*idx, line);
             }
-            compile_expr(*s.value);
+            compile_expr(*s.value, line);
             std::uint8_t vidx = variable_index(s.var);
             std::uint8_t num_indices =
                 static_cast<std::uint8_t>(s.indices.size());
@@ -95,7 +95,7 @@ void Compiler::compile_statement(const Statement& stmt) {
                 (static_cast<std::uint32_t>(num_indices) << 8) | vidx;
             emit(OpCode::ArrayStore, line, operand);
           } else {
-            compile_expr(*s.value);
+            compile_expr(*s.value, line);
             std::uint8_t vidx = variable_index(s.var);
             emit(OpCode::StoreVar, line, vidx);
           }
@@ -103,7 +103,7 @@ void Compiler::compile_statement(const Statement& stmt) {
           emit(OpCode::Jmp, line, 0);
           record_fixup(code_.size() - 1, s.target_line);
         } else if constexpr (std::is_same_v<T, IfStmt>) {
-          compile_expr(*s.condition);
+          compile_expr(*s.condition, line);
           emit(OpCode::JmpFalse, line, 0);
           std::size_t jmp_false_idx = code_.size() - 1;
 
@@ -144,11 +144,11 @@ void Compiler::compile_statement(const Statement& stmt) {
                 static_cast<std::uint32_t>(after_then_pc);
           }
         } else if constexpr (std::is_same_v<T, ForStmt>) {
-          compile_expr(*s.start);
+          compile_expr(*s.start, line);
           std::uint8_t vidx = variable_index(s.var);
           emit(OpCode::StoreVar, line, vidx);
-          compile_expr(*s.end);
-          compile_expr(*s.step);
+          compile_expr(*s.end, line);
+          compile_expr(*s.step, line);
           emit(OpCode::ForInit, line, vidx);
         } else if constexpr (std::is_same_v<T, NextStmt>) {
           std::uint8_t vidx = variable_index(s.var);
@@ -189,7 +189,7 @@ void Compiler::compile_statement(const Statement& stmt) {
             if (target.is_array) {
               // Compile index expressions
               for (auto& idx : target.indices) {
-                compile_expr(*idx);
+                compile_expr(*idx, line);
               }
               std::uint8_t vidx = variable_index(target.name);
               emit(OpCode::ReadArray, line, vidx);
@@ -206,7 +206,7 @@ void Compiler::compile_statement(const Statement& stmt) {
         } else if constexpr (std::is_same_v<T, OpenStmt>) {
           // OPEN filenum AS filename (mode)
           // Stack order at runtime: [filename, mode, filenum] (filenum on top)
-          compile_expr(*s.filename);
+          compile_expr(*s.filename, line);
           auto mode_idx = add_constant(Value(s.mode));
           emit(OpCode::Constant, line, mode_idx);
           auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
@@ -221,7 +221,7 @@ void Compiler::compile_statement(const Statement& stmt) {
           for (std::size_t i = 0; i < s.args.size(); ++i) {
             auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
             emit(OpCode::Constant, line, fn_idx);
-            compile_expr(*s.args[i]);
+            compile_expr(*s.args[i], line);
             if (i > 0) {
               auto sp_idx = add_constant(Value(std::string(" ")));
               emit(OpCode::Constant, line, sp_idx);
@@ -261,43 +261,43 @@ void Compiler::compile_statement(const Statement& stmt) {
       stmt.data);
 }
 
-void Compiler::compile_expr(const Expr& expr) {
+void Compiler::compile_expr(const Expr& expr, std::int32_t line) {
   std::visit(
       [&](auto&& arg) {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, NumberExpr>) {
           auto idx = add_constant(Value(arg.value));
-          emit(OpCode::Constant, 0, idx);
+          emit(OpCode::Constant, line, idx);
         } else if constexpr (std::is_same_v<T, StringExpr>) {
           auto idx = add_constant(Value(arg.value));
-          emit(OpCode::Constant, 0, idx);
+          emit(OpCode::Constant, line, idx);
         } else if constexpr (std::is_same_v<T, VariableExpr>) {
           std::uint8_t vidx = variable_index(arg.name);
-          emit(OpCode::LoadVar, 0, vidx);
+          emit(OpCode::LoadVar, line, vidx);
         } else if constexpr (std::is_same_v<T, ArrayRefExpr>) {
           for (auto& idx : arg.indices) {
-            compile_expr(*idx);
+            compile_expr(*idx, line);
           }
           std::uint8_t vidx = variable_index(arg.name);
           std::uint8_t num_indices =
               static_cast<std::uint8_t>(arg.indices.size());
           std::uint32_t operand =
               (static_cast<std::uint32_t>(num_indices) << 8) | vidx;
-          emit(OpCode::ArrayLoad, 0, operand);
+          emit(OpCode::ArrayLoad, line, operand);
         } else if constexpr (std::is_same_v<T, BinaryExpr>) {
-          compile_expr(*arg.left);
-          compile_expr(*arg.right);
+          compile_expr(*arg.left, line);
+          compile_expr(*arg.right, line);
           switch (arg.op) {
-            case TokenType::Plus: emit(OpCode::Add, 0); break;
-            case TokenType::Minus: emit(OpCode::Sub, 0); break;
-            case TokenType::Star: emit(OpCode::Mul, 0); break;
-            case TokenType::Slash: emit(OpCode::Div, 0); break;
-            case TokenType::Eq: emit(OpCode::Eq, 0); break;
-            case TokenType::Ne: emit(OpCode::Ne, 0); break;
-            case TokenType::Lt: emit(OpCode::Lt, 0); break;
-            case TokenType::Le: emit(OpCode::Le, 0); break;
-            case TokenType::Gt: emit(OpCode::Gt, 0); break;
-            case TokenType::Ge: emit(OpCode::Ge, 0); break;
+            case TokenType::Plus: emit(OpCode::Add, line); break;
+            case TokenType::Minus: emit(OpCode::Sub, line); break;
+            case TokenType::Star: emit(OpCode::Mul, line); break;
+            case TokenType::Slash: emit(OpCode::Div, line); break;
+            case TokenType::Eq: emit(OpCode::Eq, line); break;
+            case TokenType::Ne: emit(OpCode::Ne, line); break;
+            case TokenType::Lt: emit(OpCode::Lt, line); break;
+            case TokenType::Le: emit(OpCode::Le, line); break;
+            case TokenType::Gt: emit(OpCode::Gt, line); break;
+            case TokenType::Ge: emit(OpCode::Ge, line); break;
             default: errors_.push_back("unsupported binary operator"); break;
           }
         }

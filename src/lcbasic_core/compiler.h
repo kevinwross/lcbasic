@@ -102,5 +102,5 @@ private:
 
   void compile_program();
   void compile_statement(const Statement& stmt);
-  void compile_expr(const Expr& expr);
+  void compile_expr(const Expr& expr, std::int32_t line);
 };

@@ -65,9 +65,10 @@ static bool run_program(const Program& program, Screen& screen, Host& host) {
   }
 
   Vm vm(screen, host);
-  if (!vm.run(compiler.code(), compiler.constants(), compiler.line_table(),
-              compiler.variable_table(), compiler.variable_names(),
-              compiler.data_values())) {
+  vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
+          compiler.variable_table(), compiler.variable_names(),
+          compiler.data_values());
+  if (!vm.run()) {
     for (const auto& err : vm.errors()) {
       std::cerr << "lcbasic: " << err << "\n";
     }
