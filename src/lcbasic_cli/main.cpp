@@ -73,8 +73,10 @@ static bool run_program(const Program& program, Screen& screen, Host& host) {
     for (const auto& err : vm.errors()) {
       std::cerr << "lcbasic: " << err << "\n";
     }
+    screen.refresh();
     return false;
   }
+  screen.refresh();
   return true;
 }
 
