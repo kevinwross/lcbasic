@@ -1,6 +1,7 @@
 #pragma once
 
 #include "compiler.h"
+#include "builtins.h"
 #include "host.h"
 #include "screen.h"
 #include "value.h"
@@ -168,6 +169,8 @@ private:
   Value coerce_value(const Value& v, VarType t, std::int32_t line);
   // Compare two values (-1/0/1), raising Type mismatch for mixed types.
   int compare_values(const Value& a, const Value& b, std::int32_t line);
+  Value call_builtin(Builtin b, const std::vector<Value>& args,
+                     std::int32_t line);
   int file_handle_for(std::uint8_t filenum_idx);
   std::optional<std::size_t> find_pc_for_line(std::int32_t line) const;
   [[noreturn]] void trap_error(int error_code, std::int32_t line);

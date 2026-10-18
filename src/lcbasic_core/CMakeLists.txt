@@ -2,6 +2,7 @@ add_library(lcbasic_core STATIC
   value.cpp
   host.cpp
   number_format.cpp
+  builtins.cpp
   lexer.cpp
   parser.cpp
   compiler.cpp

@@ -8,6 +8,7 @@ LDFLAGS := -lncurses
 CORE_SRC := src/lcbasic_core/value.cpp \
             src/lcbasic_core/host.cpp \
             src/lcbasic_core/number_format.cpp \
+            src/lcbasic_core/builtins.cpp \
             src/lcbasic_core/lexer.cpp \
             src/lcbasic_core/parser.cpp \
             src/lcbasic_core/compiler.cpp \

@@ -42,6 +42,7 @@ void StdoutScreen::refresh() { out_.flush(); }
 StdoutScreen::Size StdoutScreen::size() const { return Size{rows_, cols_}; }
 
 int StdoutScreen::column() const { return col_; }
+int StdoutScreen::row() const { return row_; }
 
 std::optional<int> StdoutScreen::get_key(bool /*blocking*/) {
   return std::nullopt;

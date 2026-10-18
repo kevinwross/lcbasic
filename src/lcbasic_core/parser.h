@@ -33,10 +33,14 @@ struct FnCallExpr {
   std::vector<std::unique_ptr<Expr>> args;
 };
 struct BuiltinExpr { std::string name; };
+struct FunctionExpr {
+  std::string name;
+  std::vector<std::unique_ptr<Expr>> args;
+};
 
 struct Expr {
   std::variant<NumberExpr, StringExpr, VariableExpr, ArrayRefExpr,
-               BinaryExpr, FnCallExpr, BuiltinExpr>
+               BinaryExpr, FnCallExpr, BuiltinExpr, FunctionExpr>
       data;
 };
 

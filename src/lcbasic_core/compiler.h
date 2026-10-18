@@ -58,6 +58,7 @@ enum class OpCode : std::uint8_t {
   Clear,        // clear variables/arrays/data/stacks
   RaiseError,   // stack: error code
   MidAssign,    // operand = target var index; stack: value, start, length
+  CallBuiltin,  // operand = (builtin id << 8) | arg count
   Halt,         // stop execution
 };
 

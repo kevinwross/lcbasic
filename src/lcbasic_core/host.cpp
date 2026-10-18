@@ -93,8 +93,15 @@ double RealHost::timer() {
   return ms / 1000.0;
 }
 
-double RealHost::rnd(double /*seed*/) {
-  return static_cast<double>(std::rand()) / RAND_MAX;
+double RealHost::rnd(double seed) {
+  if (seed < 0.0) {
+    rng_.seed(static_cast<std::uint32_t>(-seed));
+    last_rnd_ = std::uniform_real_distribution<double>(0.0, 1.0)(rng_);
+    return last_rnd_;
+  }
+  if (seed == 0.0) return last_rnd_;
+  last_rnd_ = std::uniform_real_distribution<double>(0.0, 1.0)(rng_);
+  return last_rnd_;
 }
 
 std::string RealHost::input_line() {

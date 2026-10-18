@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <sstream>
 #include <stdexcept>
 
@@ -74,6 +77,191 @@ Value Vm::coerce_value(const Value& v, VarType t, std::int32_t line) {
     default:
       return v;
   }
+}
+
+Value Vm::call_builtin(Builtin b, const std::vector<Value>& args,
+                       std::int32_t line) {
+  auto num = [&](std::size_t i) -> double {
+    return (i < args.size()) ? args[i].as_double() : 0.0;
+  };
+  auto str = [&](std::size_t i) -> std::string {
+    return (i < args.size()) ? args[i].as_string() : std::string();
+  };
+
+  switch (b) {
+    case Builtin::Abs: return Value(std::fabs(num(0)));
+    case Builtin::Sgn: {
+      double x = num(0);
+      return Value(x < 0.0 ? -1.0 : (x > 0.0 ? 1.0 : 0.0));
+    }
+    case Builtin::Int: return Value(std::floor(num(0)));
+    case Builtin::Fix: return Value(std::trunc(num(0)));
+    case Builtin::Sqr: {
+      double x = num(0);
+      if (x < 0.0) trap_error(5, line);
+      return Value(std::sqrt(x));
+    }
+    case Builtin::Sin: return Value(std::sin(num(0)));
+    case Builtin::Cos: return Value(std::cos(num(0)));
+    case Builtin::Tan: return Value(std::tan(num(0)));
+    case Builtin::Atn: return Value(std::atan(num(0)));
+    case Builtin::Log: {
+      double x = num(0);
+      if (x <= 0.0) trap_error(5, line);
+      return Value(std::log(x));
+    }
+    case Builtin::Exp: return Value(std::exp(num(0)));
+    case Builtin::Rnd: {
+      double s = args.empty() ? 1.0 : num(0);
+      return Value(host_.rnd(s));
+    }
+    case Builtin::CInt: {
+      double x = std::round(num(0));
+      if (x < -32768.0 || x > 32767.0) trap_error(6, line);
+      return Value(static_cast<Int16>(x));
+    }
+    case Builtin::CSng: {
+      float f = static_cast<float>(num(0));
+      if (std::isinf(f)) trap_error(6, line);
+      return Value(f);
+    }
+    case Builtin::CDbl: return Value(num(0));
+    case Builtin::Len:
+      return Value(static_cast<double>(str(0).size()));
+    case Builtin::Left: {
+      std::string s = str(0);
+      int n = static_cast<int>(num(1));
+      if (n < 0) trap_error(5, line);
+      if (n > static_cast<int>(s.size())) n = static_cast<int>(s.size());
+      return Value(s.substr(0, static_cast<std::size_t>(n)));
+    }
+    case Builtin::Right: {
+      std::string s = str(0);
+      int n = static_cast<int>(num(1));
+      if (n < 0) trap_error(5, line);
+      if (n > static_cast<int>(s.size())) n = static_cast<int>(s.size());
+      return Value(s.substr(s.size() - static_cast<std::size_t>(n)));
+    }
+    case Builtin::Mid: {
+      std::string s = str(0);
+      int start = static_cast<int>(num(1));
+      int len = (args.size() >= 3) ? static_cast<int>(num(2))
+                                   : static_cast<int>(s.size());
+      if (start < 1) start = 1;
+      if (len < 0) trap_error(5, line);
+      if (start > static_cast<int>(s.size())) return Value(std::string());
+      int pos = start - 1;
+      int n = std::min(len, static_cast<int>(s.size()) - pos);
+      return Value(s.substr(static_cast<std::size_t>(pos),
+                            static_cast<std::size_t>(n)));
+    }
+    case Builtin::Instr: {
+      int start = 1;
+      std::string s1, s2;
+      if (args.size() >= 3) {
+        start = static_cast<int>(num(0));
+        s1 = str(1);
+        s2 = str(2);
+      } else {
+        s1 = str(0);
+        s2 = str(1);
+      }
+      if (start < 1) start = 1;
+      if (start > static_cast<int>(s1.size()) + 1) return Value(0.0);
+      std::size_t pos = s1.find(s2, static_cast<std::size_t>(start - 1));
+      return Value(pos == std::string::npos
+                       ? 0.0
+                       : static_cast<double>(pos + 1));
+    }
+    case Builtin::Val: {
+      std::string s = str(0);
+      const char* c = s.c_str();
+      char* end = nullptr;
+      double v = std::strtod(c, &end);
+      if (end == c) return Value(0.0);
+      return Value(v);
+    }
+    case Builtin::Str: {
+      std::string s = format_basic_number(num(0));
+      if (!s.empty() && s.back() == ' ') s.pop_back();
+      return Value(s);
+    }
+    case Builtin::Chr: {
+      int c = static_cast<int>(num(0));
+      return Value(std::string(1, static_cast<char>(c & 0xFF)));
+    }
+    case Builtin::Asc: {
+      std::string s = str(0);
+      return Value(s.empty()
+                       ? 0.0
+                       : static_cast<double>(
+                             static_cast<unsigned char>(s[0])));
+    }
+    case Builtin::Space: {
+      int n = static_cast<int>(num(0));
+      if (n < 0) n = 0;
+      return Value(std::string(static_cast<std::size_t>(n), ' '));
+    }
+    case Builtin::StringFn: {
+      int n = static_cast<int>(num(0));
+      if (n < 0) n = 0;
+      char c = ' ';
+      if (args.size() >= 2 && args[1].is_string()) {
+        std::string s = args[1].as_string();
+        c = s.empty() ? ' ' : s[0];
+      } else {
+        c = static_cast<char>(static_cast<int>(num(1)) & 0xFF);
+      }
+      return Value(std::string(static_cast<std::size_t>(n), c));
+    }
+    case Builtin::UCase: {
+      std::string s = str(0);
+      for (char& c : s) {
+        c = static_cast<char>(
+            std::toupper(static_cast<unsigned char>(c)));
+      }
+      return Value(s);
+    }
+    case Builtin::LCase: {
+      std::string s = str(0);
+      for (char& c : s) {
+        c = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(c)));
+      }
+      return Value(s);
+    }
+    case Builtin::Hex: {
+      char buf[32];
+      std::snprintf(buf, sizeof(buf), "%X",
+                    static_cast<unsigned>(static_cast<long>(num(0))));
+      return Value(std::string(buf));
+    }
+    case Builtin::Oct: {
+      char buf[32];
+      std::snprintf(buf, sizeof(buf), "%o",
+                    static_cast<unsigned>(static_cast<long>(num(0))));
+      return Value(std::string(buf));
+    }
+    case Builtin::Tab: {
+      int target = static_cast<int>(num(0));
+      int col = screen_.column();  // 1-based
+      int spaces = target - col;
+      if (spaces < 0) spaces = 0;
+      return Value(std::string(static_cast<std::size_t>(spaces), ' '));
+    }
+    case Builtin::Spc: {
+      int n = static_cast<int>(num(0));
+      if (n < 0) n = 0;
+      return Value(std::string(static_cast<std::size_t>(n), ' '));
+    }
+    case Builtin::Fre:
+      return Value(65536.0);
+    case Builtin::Pos:
+      return Value(static_cast<double>(screen_.column() - 1));
+    case Builtin::Csrlin:
+      return Value(static_cast<double>(screen_.row() - 1));
+  }
+  return Value{};
 }
 
 std::int32_t Vm::current_line() const {
@@ -832,6 +1020,16 @@ ExecStatus Vm::execute(bool single_step) {
           }
           var_values_[vidx] = Value(target);
           var_init_[vidx] = true;
+          break;
+        }
+        case OpCode::CallBuiltin: {
+          Builtin b = static_cast<Builtin>((inst.operand >> 8) & 0xFF);
+          int count = static_cast<int>(inst.operand & 0xFF);
+          std::vector<Value> args(static_cast<std::size_t>(count));
+          for (int i = count - 1; i >= 0; --i) {
+            args[static_cast<std::size_t>(i)] = pop();
+          }
+          push(call_builtin(b, args, current_line));
           break;
         }
         case OpCode::Halt: {

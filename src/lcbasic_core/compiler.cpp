@@ -1,4 +1,5 @@
 #include "compiler.h"
+#include "builtins.h"
 
 #include <algorithm>
 
@@ -519,6 +520,18 @@ void Compiler::compile_expr(const Expr& expr, std::int32_t line) {
             errors_.push_back("unknown builtin: " + arg.name);
             emit(OpCode::Constant, line, add_constant(Value(0.0)));
           }
+        } else if constexpr (std::is_same_v<T, FunctionExpr>) {
+          auto b = find_builtin(arg.name);
+          if (!b) {
+            errors_.push_back("unknown function: " + arg.name);
+            emit(OpCode::Constant, line, add_constant(Value(0.0)));
+            return;
+          }
+          for (auto& a : arg.args) compile_expr(*a, line);
+          std::uint32_t operand =
+              (static_cast<std::uint32_t>(*b) << 8) |
+              (static_cast<std::uint32_t>(arg.args.size()) & 0xFF);
+          emit(OpCode::CallBuiltin, line, operand);
         } else if constexpr (std::is_same_v<T, BinaryExpr>) {
           compile_expr(*arg.left, line);
           compile_expr(*arg.right, line);

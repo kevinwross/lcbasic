@@ -8,6 +8,7 @@ add_executable(lcbasic_tests
   test_dap.cpp
   test_bugs.cpp
   test_statements.cpp
+  test_functions.cpp
 )
 
 if(HAVE_CURSES)

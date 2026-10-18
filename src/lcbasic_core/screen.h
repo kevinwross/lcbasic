@@ -42,6 +42,9 @@ public:
   // Return the current 1-based column of the cursor (for PRINT zones).
   virtual int column() const = 0;
 
+  // Return the current 1-based row of the cursor (for CSRLIN).
+  virtual int row() const = 0;
+
   // Read a single keypress; returns std::nullopt if no key is available
   // (non-blocking) or the implementation blocks until a key is pressed.
   virtual std::optional<int> get_key(bool blocking) = 0;

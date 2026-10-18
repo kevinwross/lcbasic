@@ -60,6 +60,7 @@ const char* opcode_name(OpCode op) {
     case OpCode::Clear: return "CLEAR";
     case OpCode::RaiseError: return "ERROR";
     case OpCode::MidAssign: return "MIDASSIGN";
+    case OpCode::CallBuiltin: return "BUILTIN";
     case OpCode::Open: return "OPEN";
     case OpCode::Close: return "CLOSE";
     case OpCode::PrintFile: return "PRINT#";
@@ -162,6 +163,10 @@ Value eval_expr(EvalContext& ctx, const Expr& expr) {
         } else if constexpr (std::is_same_v<T, BuiltinExpr>) {
           ctx.ok = false;
           ctx.error = "builtin not supported in evaluation";
+          return Value{};
+        } else if constexpr (std::is_same_v<T, FunctionExpr>) {
+          ctx.ok = false;
+          ctx.error = "functions not supported in evaluation";
           return Value{};
         }
       },

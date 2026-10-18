@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "builtins.h"
 
 #include <cctype>
 #include <sstream>
@@ -945,27 +946,56 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     e->data = BuiltinExpr{"TIMER"};
     return e;
   }
+  if (match(TokenType::KeywordMid)) {
+    // MID$(str, start[, length]) used as a function.
+    consume(TokenType::LParen, "expected '(' after MID$");
+    FunctionExpr fn;
+    fn.name = "MID$";
+    do {
+      auto a = parse_expression();
+      if (!a) return nullptr;
+      fn.args.push_back(std::move(a));
+    } while (match(TokenType::Comma));
+    consume(TokenType::RParen, "expected ')' after MID$ arguments");
+    auto e = std::make_unique<Expr>();
+    e->data = std::move(fn);
+    return e;
+  }
   if (check(TokenType::Identifier)) {
     Token t = advance();
-    // Check if followed by '(' -> array reference or function call
+    std::string name = t.lexeme;
     if (check(TokenType::LParen)) {
-      // Look ahead: is this a DIM'd array? For now, treat as array ref.
-      std::vector<std::unique_ptr<Expr>> indices;
-      advance(); // consume '('
+      std::vector<std::unique_ptr<Expr>> args;
+      advance();  // consume '('
       if (!check(TokenType::RParen)) {
         do {
-          auto idx = parse_expression();
-          if (!idx) return nullptr;
-          indices.push_back(std::move(idx));
+          auto a = parse_expression();
+          if (!a) return nullptr;
+          args.push_back(std::move(a));
         } while (match(TokenType::Comma));
       }
-      consume(TokenType::RParen, "expected ')' after indices");
+      consume(TokenType::RParen, "expected ')' after arguments");
+
+      if (find_builtin(name)) {
+        auto e = std::make_unique<Expr>();
+        e->data = FunctionExpr{name, std::move(args)};
+        return e;
+      }
+      // Otherwise it is an array reference.
       auto e = std::make_unique<Expr>();
-      e->data = ArrayRefExpr{std::move(t.lexeme), std::move(indices)};
+      e->data = ArrayRefExpr{std::move(name), std::move(args)};
       return e;
     }
+    // No parentheses: zero-argument built-ins (CSRLIN, RND).
+    if (auto b = find_builtin(name)) {
+      if (*b == Builtin::Csrlin || *b == Builtin::Rnd) {
+        auto e = std::make_unique<Expr>();
+        e->data = FunctionExpr{std::move(name), {}};
+        return e;
+      }
+    }
     auto e = std::make_unique<Expr>();
-    e->data = VariableExpr{std::move(t.lexeme)};
+    e->data = VariableExpr{std::move(name)};
     return e;
   }
   if (match(TokenType::LParen)) {

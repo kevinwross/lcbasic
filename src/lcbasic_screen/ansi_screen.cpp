@@ -52,6 +52,10 @@ int AnsiScreen::column() const {
   return getcurx(window_) + 1;
 }
 
+int AnsiScreen::row() const {
+  return getcury(window_) + 1;
+}
+
 std::optional<int> AnsiScreen::get_key(bool blocking) {
   nodelay(window_, !blocking);
   int ch = wgetch(window_);

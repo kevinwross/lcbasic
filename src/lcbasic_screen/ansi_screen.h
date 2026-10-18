@@ -18,6 +18,7 @@ public:
   void refresh() override;
   Size size() const override;
   int column() const override;
+  int row() const override;
   std::optional<int> get_key(bool blocking) override;
 
 private:

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <fstream>
 #include <memory>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -65,4 +66,6 @@ private:
     bool writing = false;
   };
   std::vector<FileEntry> files_; // index 0 unused (file numbers start at 1)
+  std::mt19937 rng_{std::random_device{}()};
+  double last_rnd_ = 0.0;
 };
