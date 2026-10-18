@@ -125,17 +125,22 @@ struct OpenStmt {
   std::unique_ptr<Expr> record_len;  // optional LEN= for RANDOM
 };
 
-struct CloseStmt { std::int32_t filenum; };
+struct CloseStmt {
+  std::int32_t filenum = 0;
+  std::unique_ptr<Expr> filenum_expr;
+};
 
 struct PrintFileStmt {
-  std::int32_t filenum;
+  std::int32_t filenum = 0;
+  std::unique_ptr<Expr> filenum_expr;
   std::vector<std::unique_ptr<Expr>> args;
   std::vector<TokenType> separators;
   bool trailing_separator = false;
 };
 
 struct InputFileStmt {
-  std::int32_t filenum;
+  std::int32_t filenum = 0;
+  std::unique_ptr<Expr> filenum_expr;
   std::vector<ReadTarget> targets;
   bool line_input = false;
 };
@@ -227,7 +232,8 @@ struct SwapStmt {
 struct RandomizeStmt { std::unique_ptr<Expr> seed; };
 
 struct WriteFileStmt {
-  std::int32_t filenum;
+  std::int32_t filenum = 0;
+  std::unique_ptr<Expr> filenum_expr;
   std::vector<std::unique_ptr<Expr>> args;
 };
 

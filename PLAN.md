@@ -168,7 +168,8 @@ Notes:
   the legacy `OPEN mode, [#]n, file [, reclen]` with `"I"/"O"/"A"/"R"`
   (or `"INPUT"/"OUTPUT"/"APPEND"/"RANDOM"`). `CLOSE [#]n` and bare
   `CLOSE` (close all) work; `LOF`, `LOC`, `FREEFILE`, and
-  `CVI`/`CVS`/`CVD`/`MKI$`/`MKS$`/`MKD$` are implemented.
+  `CVI`/`CVS`/`CVD`/`MKI$`/`MKS$`/`MKD$` are implemented. File numbers
+  may be expressions (`PRINT #N`, `CLOSE N`, `OPEN ... AS #N`).
 - Built-in functions: numeric (`ABS`…`CDBL`, `RND`), string (`LEN`…`OCT$`),
   and `TAB`/`SPC`/`FRE`/`POS`/`CSRLIN`.
 - Graphics (`PSET`/`LINE`/`CIRCLE`/…) and sound (`SOUND`/`BEEP`/`PLAY`)

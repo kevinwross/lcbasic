@@ -586,6 +586,24 @@ TEST(ext_legacy_open_random) {
   CHECK(r.output == "abc       \n 2  32 \n");
 }
 
+TEST(ext_file_number_expressions) {
+  std::string path = "/tmp/lcbasic_fnum_expr.txt";
+  std::remove(path.c_str());
+  auto r = e2e::run(
+      "10 N = 3\n"
+      "20 OPEN \"OUTPUT\", #N, \"" + path + "\"\n"
+      "30 PRINT #N, \"hello\"\n"
+      "40 CLOSE N\n"
+      "50 OPEN \"INPUT\", N, \"" + path + "\"\n"
+      "60 LINE INPUT #N, A$\n"
+      "70 PRINT A$\n"
+      "80 CLOSE N\n"
+      "90 END");
+  std::remove(path.c_str());
+  REQUIRE(r.ran);
+  CHECK(r.output == "hello\n");
+}
+
 TEST(ext_freefile_and_cv_mk) {
   auto r = e2e::run(
       "10 PRINT FREEFILE\n"

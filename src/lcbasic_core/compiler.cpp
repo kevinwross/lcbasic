@@ -380,37 +380,56 @@ void Compiler::compile_statement(const Statement& stmt) {
           emit(s.put ? OpCode::PutRecord : OpCode::GetRecord, line,
                static_cast<std::uint32_t>(s.filenum));
         } else if constexpr (std::is_same_v<T, CloseStmt>) {
-          auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
-          emit(OpCode::Constant, line, fn_idx);
-          emit(OpCode::Close, line, 0);
-        } else if constexpr (std::is_same_v<T, PrintFileStmt>) {
-          // PRINT #filenum, values (separators written to the file too)
-          for (std::size_t i = 0; i < s.args.size(); ++i) {
+          if (s.filenum_expr) {
+            compile_expr(*s.filenum_expr, line);
+          } else {
             auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
             emit(OpCode::Constant, line, fn_idx);
+          }
+          emit(OpCode::Close, line, 0);
+        } else if constexpr (std::is_same_v<T, PrintFileStmt>) {
+          // The file number may be an expression; evaluate it once and keep
+          // it in temp slot 3.
+          const bool fn_expr = static_cast<bool>(s.filenum_expr);
+          if (fn_expr) {
+            compile_expr(*s.filenum_expr, line);
+            emit(OpCode::StoreTemp, line, 3);
+          }
+          auto push_filenum = [&]() {
+            if (fn_expr) {
+              emit(OpCode::LoadTemp, line, 3);
+            } else {
+              auto idx =
+                  add_constant(Value(static_cast<double>(s.filenum)));
+              emit(OpCode::Constant, line, idx);
+            }
+          };
+          for (std::size_t i = 0; i < s.args.size(); ++i) {
+            push_filenum();
             compile_expr(*s.args[i], line);
             emit(OpCode::PrintFile, line, 0);
             TokenType sep =
                 (i < s.separators.size()) ? s.separators[i] : TokenType::Eof;
             if (sep == TokenType::Comma) {
-              auto fn2 =
-                  add_constant(Value(static_cast<double>(s.filenum)));
-              emit(OpCode::Constant, line, fn2);
+              push_filenum();
               auto sp_idx = add_constant(Value(std::string(" ")));
               emit(OpCode::Constant, line, sp_idx);
               emit(OpCode::PrintFile, line, 0);
             }
           }
           if (!s.trailing_separator) {
-            auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
-            emit(OpCode::Constant, line, fn_idx);
+            push_filenum();
             auto nl_idx = add_constant(Value(std::string("\n")));
             emit(OpCode::Constant, line, nl_idx);
             emit(OpCode::PrintFile, line, 0);
           }
         } else if constexpr (std::is_same_v<T, InputFileStmt>) {
-          auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
-          emit(OpCode::Constant, line, fn_idx);
+          if (s.filenum_expr) {
+            compile_expr(*s.filenum_expr, line);
+          } else {
+            auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
+            emit(OpCode::Constant, line, fn_idx);
+          }
           for (const auto& target : s.targets) {
             for (auto& idx : target.indices) {
               compile_expr(*idx, line);
@@ -570,8 +589,12 @@ void Compiler::compile_statement(const Statement& stmt) {
           }
           emit(OpCode::Randomize, line);
         } else if constexpr (std::is_same_v<T, WriteFileStmt>) {
-          auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
-          emit(OpCode::Constant, line, fn_idx);
+          if (s.filenum_expr) {
+            compile_expr(*s.filenum_expr, line);
+          } else {
+            auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
+            emit(OpCode::Constant, line, fn_idx);
+          }
           for (auto& a : s.args) compile_expr(*a, line);
           emit(OpCode::WriteFile, line,
                static_cast<std::uint32_t>(s.args.size()));

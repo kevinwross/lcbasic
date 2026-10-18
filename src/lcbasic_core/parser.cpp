@@ -78,8 +78,8 @@ bool Parser::parse_statement() {
         match(TokenType::KeywordPrint);
         consume(TokenType::KeywordHash, "expected '#' after PRINT");
         PrintFileStmt pfile;
-        consume(TokenType::Number, "expected file number after '#'");
-        pfile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+        pfile.filenum_expr = parse_expression();
+        if (!pfile.filenum_expr) return false;
         if (match(TokenType::Comma)) {
         }
         while (!is_at_end() && !check(TokenType::Newline) &&
@@ -401,8 +401,8 @@ bool Parser::parse_statement() {
         else error_at_current("expected INPUT/OUTPUT/APPEND/RANDOM after FOR");
         consume(TokenType::KeywordAs, "expected AS after mode");
         consume(TokenType::KeywordHash, "expected '#' after AS");
-        consume(TokenType::Number, "expected file number after '#'");
-        open.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+        open.filenum_expr = parse_expression();
+        if (!open.filenum_expr) return false;
         // Optional LEN= for RANDOM files (LEN is an identifier, not a keyword).
         if (check(TokenType::Identifier) &&
             tokens_[current_].lexeme.size() == 3 &&
@@ -436,8 +436,8 @@ bool Parser::parse_statement() {
       if (!is_at_end() && !check(TokenType::Newline) &&
           !check(TokenType::Colon)) {
         match(TokenType::KeywordHash);  // '#' is optional
-        consume(TokenType::Number, "expected file number after CLOSE");
-        close.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+        close.filenum_expr = parse_expression();
+        if (!close.filenum_expr) return false;
       } else {
         close.filenum = 0;  // CLOSE with no arguments closes all files
       }
@@ -445,8 +445,8 @@ bool Parser::parse_statement() {
     } else if (match(TokenType::KeywordPrint)) {
       consume(TokenType::KeywordHash, "expected '#' after PRINT");
       PrintFileStmt pfile;
-      consume(TokenType::Number, "expected file number after '#'");
-      pfile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      pfile.filenum_expr = parse_expression();
+      if (!pfile.filenum_expr) return false;
       if (match(TokenType::Comma)) {
         // optional comma after filenum
       }
@@ -466,8 +466,8 @@ bool Parser::parse_statement() {
         // INPUT #filenum, var[, var...]
         advance();  // consume '#'
         InputFileStmt ifile;
-        consume(TokenType::Number, "expected file number after '#'");
-        ifile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+        ifile.filenum_expr = parse_expression();
+        if (!ifile.filenum_expr) return false;
         if (match(TokenType::Comma)) {
           // optional comma
         }
@@ -721,9 +721,8 @@ bool Parser::parse_statement() {
           advance();  // '#'
           InputFileStmt ifile;
           ifile.line_input = true;
-          consume(TokenType::Number, "expected file number after '#'");
-          ifile.filenum =
-              static_cast<std::int32_t>(tokens_[current_ - 1].number);
+          ifile.filenum_expr = parse_expression();
+          if (!ifile.filenum_expr) return false;
           if (match(TokenType::Comma)) {
           }
           do {
@@ -834,8 +833,8 @@ bool Parser::parse_statement() {
     } else if (match(TokenType::KeywordWrite)) {
       WriteFileStmt w;
       consume(TokenType::KeywordHash, "expected '#' after WRITE");
-      consume(TokenType::Number, "expected file number after '#'");
-      w.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      w.filenum_expr = parse_expression();
+      if (!w.filenum_expr) return false;
       if (match(TokenType::Comma)) {
         // optional comma
       }
@@ -1010,8 +1009,8 @@ std::unique_ptr<Statement> Parser::parse_statement_no_line() {
       match(TokenType::KeywordPrint);
       consume(TokenType::KeywordHash, "expected '#' after PRINT");
       PrintFileStmt pfile;
-      consume(TokenType::Number, "expected file number after '#'");
-      pfile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      pfile.filenum_expr = parse_expression();
+      if (!pfile.filenum_expr) return nullptr;
       if (match(TokenType::Comma)) {
       }
       while (!is_at_end() && !check(TokenType::Newline) &&
