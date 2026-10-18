@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -389,6 +390,85 @@ Value Vm::call_builtin(Builtin b, const std::vector<Value>& args,
         return Value(0.0);
       }
       return Value(host_.file_eof(file_handles_[filenum]) ? -1.0 : 0.0);
+    }
+    case Builtin::Lof: {
+      int filenum = static_cast<int>(num(0));
+      if (filenum < 1 || filenum > 255) {
+        trap_error(52, line);
+        return Value(0.0);
+      }
+      int handle = file_handles_[filenum];
+      auto rit = random_files_.find(filenum);
+      if (rit != random_files_.end()) handle = rit->second.handle;
+      if (handle < 0) {
+        trap_error(52, line);
+        return Value(0.0);
+      }
+      return Value(static_cast<double>(host_.file_size(handle)));
+    }
+    case Builtin::Loc: {
+      int filenum = static_cast<int>(num(0));
+      if (filenum < 1 || filenum > 255) {
+        trap_error(52, line);
+        return Value(0.0);
+      }
+      auto rit = random_files_.find(filenum);
+      if (rit != random_files_.end()) {
+        return Value(static_cast<double>(rit->second.last_record));
+      }
+      if (file_handles_[filenum] < 0) {
+        trap_error(52, line);
+        return Value(0.0);
+      }
+      return Value(static_cast<double>(host_.file_tell(file_handles_[filenum])));
+    }
+    case Builtin::Freefile: {
+      for (int i = 1; i <= 255; ++i) {
+        if (file_handles_[i] < 0 &&
+            random_files_.find(i) == random_files_.end()) {
+          return Value(static_cast<double>(i));
+        }
+      }
+      trap_error(67, line);  // Too many files
+      return Value(0.0);
+    }
+    case Builtin::Mki: {
+      int v = static_cast<int>(std::round(num(0)));
+      std::string s(2, '\0');
+      s[0] = static_cast<char>(v & 0xFF);
+      s[1] = static_cast<char>((v >> 8) & 0xFF);
+      return Value(s);
+    }
+    case Builtin::Mks: {
+      float f = static_cast<float>(num(0));
+      std::string s(4, '\0');
+      std::memcpy(&s[0], &f, 4);
+      return Value(s);
+    }
+    case Builtin::Mkd: {
+      double d = num(0);
+      std::string s(8, '\0');
+      std::memcpy(&s[0], &d, 8);
+      return Value(s);
+    }
+    case Builtin::CVi: {
+      std::string s = args.empty() ? std::string() : args[0].as_string();
+      int v = 0;
+      if (s.size() >= 1) v |= static_cast<unsigned char>(s[0]);
+      if (s.size() >= 2) v |= static_cast<unsigned char>(s[1]) << 8;
+      return Value(static_cast<double>(static_cast<std::int16_t>(v)));
+    }
+    case Builtin::CVs: {
+      std::string s = args.empty() ? std::string() : args[0].as_string();
+      float f = 0.0f;
+      if (s.size() >= 4) std::memcpy(&f, s.data(), 4);
+      return Value(static_cast<double>(f));
+    }
+    case Builtin::CVd: {
+      std::string s = args.empty() ? std::string() : args[0].as_string();
+      double d = 0.0;
+      if (s.size() >= 8) std::memcpy(&d, s.data(), 8);
+      return Value(d);
     }
   }
   return Value{};
@@ -1024,6 +1104,18 @@ ExecStatus Vm::execute(bool single_step) {
         case OpCode::Close: {
           double fn_d = pop().as_double();
           int filenum = static_cast<int>(fn_d);
+          if (filenum == 0) {
+            // CLOSE with no arguments: close everything.
+            for (auto& [n, rf] : random_files_) {
+              if (rf.handle >= 0) host_.random_close(rf.handle);
+            }
+            random_files_.clear();
+            for (int i = 1; i < static_cast<int>(file_handles_.size()); ++i) {
+              if (file_handles_[i] >= 0) host_.file_close(file_handles_[i]);
+              file_handles_[i] = -1;
+            }
+            break;
+          }
           // Close a random-access file if that's what this number refers to.
           auto rit = random_files_.find(filenum);
           if (rit != random_files_.end()) {
@@ -1373,6 +1465,65 @@ ExecStatus Vm::execute(bool single_step) {
           push(call_builtin(b, args, current_line));
           break;
         }
+        case OpCode::OpenGeneric: {
+          double reclen_d = pop().as_double();
+          double fn_d = pop().as_double();
+          std::string raw_mode = pop().as_string();
+          std::string filename = pop().as_string();
+          int filenum = static_cast<int>(std::round(fn_d));
+          if (filenum < 1 || filenum > 255) {
+            trap_error(5, current_line);
+            break;
+          }
+
+          std::string mode;
+          for (char c : raw_mode) {
+            mode += static_cast<char>(
+                std::toupper(static_cast<unsigned char>(c)));
+          }
+          if (mode == "OUTPUT") mode = "O";
+          else if (mode == "INPUT") mode = "I";
+          else if (mode == "APPEND") mode = "A";
+          else if (mode == "RANDOM") mode = "R";
+          else if (mode == "BINARY") mode = "B";
+          else if (!mode.empty()) mode = mode.substr(0, 1);
+
+          // Close anything already using this file number.
+          auto rit = random_files_.find(filenum);
+          if (rit != random_files_.end()) {
+            if (rit->second.handle >= 0) host_.random_close(rit->second.handle);
+            random_files_.erase(rit);
+          }
+          if (file_handles_[filenum] >= 0) {
+            host_.file_close(file_handles_[filenum]);
+            file_handles_[filenum] = -1;
+          }
+
+          if (mode == "R" || mode == "B") {
+            int record_len = static_cast<int>(std::round(reclen_d));
+            if (record_len <= 0) record_len = 128;
+            int handle = host_.random_open(filename);
+            if (handle < 0) {
+              trap_error(52, current_line);
+              break;
+            }
+            RandomFile rf;
+            rf.handle = handle;
+            rf.record_len = record_len;
+            rf.buffer.assign(static_cast<std::size_t>(record_len), ' ');
+            random_files_[filenum] = std::move(rf);
+          } else if (mode == "O" || mode == "I" || mode == "A") {
+            int handle = host_.file_open(filename, mode);
+            if (handle < 0) {
+              trap_error(52, current_line);
+              break;
+            }
+            file_handles_[filenum] = handle;
+          } else {
+            trap_error(54, current_line);  // Bad file mode
+          }
+          break;
+        }
         case OpCode::RandomOpen: {
           int record_len = static_cast<int>(std::round(pop().as_double()));
           std::string filename = pop().as_string();
@@ -1469,6 +1620,7 @@ ExecStatus Vm::execute(bool single_step) {
             break;
           }
           if (rec < 1) rec = 1;
+          it->second.last_record = rec;
           it->second.buffer = host_.random_read(
               it->second.handle, rec, it->second.record_len);
           for (auto& f : it->second.fields) {
@@ -1489,6 +1641,7 @@ ExecStatus Vm::execute(bool single_step) {
             break;
           }
           if (rec < 1) rec = 1;
+          it->second.last_record = rec;
           for (auto& f : it->second.fields) {
             std::string s =
                 (var_init_[f.var_index])

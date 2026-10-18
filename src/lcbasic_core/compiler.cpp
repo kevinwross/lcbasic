@@ -334,26 +334,27 @@ void Compiler::compile_statement(const Statement& stmt) {
               ((static_cast<std::uint32_t>(s.action) & 0xFF) << 24);
           emit(OpCode::EventControl, line, operand);
         } else if constexpr (std::is_same_v<T, OpenStmt>) {
-          if (s.mode == "R" || s.mode == "B") {
-            // RANDOM/BINARY file: stack is [filename, record_len].
-            compile_expr(*s.filename, line);
-            if (s.record_len) {
-              compile_expr(*s.record_len, line);
-            } else {
-              auto idx = add_constant(Value(128.0));
-              emit(OpCode::Constant, line, idx);
-            }
-            emit(OpCode::RandomOpen, line,
-                 static_cast<std::uint32_t>(s.filenum));
+          // Both syntaxes compile to: stack [filename, mode, filenum, reclen].
+          compile_expr(*s.filename, line);
+          if (s.mode_expr) {
+            compile_expr(*s.mode_expr, line);
           } else {
-            // Sequential file: stack is [filename, mode, filenum].
-            compile_expr(*s.filename, line);
             auto mode_idx = add_constant(Value(s.mode));
             emit(OpCode::Constant, line, mode_idx);
+          }
+          if (s.filenum_expr) {
+            compile_expr(*s.filenum_expr, line);
+          } else {
             auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
             emit(OpCode::Constant, line, fn_idx);
-            emit(OpCode::Open, line, 0);
           }
+          if (s.record_len) {
+            compile_expr(*s.record_len, line);
+          } else {
+            auto len_idx = add_constant(Value(128.0));
+            emit(OpCode::Constant, line, len_idx);
+          }
+          emit(OpCode::OpenGeneric, line, 0);
         } else if constexpr (std::is_same_v<T, FieldStmt>) {
           for (const auto& [len_expr, var] : s.fields) {
             compile_expr(*len_expr, line);

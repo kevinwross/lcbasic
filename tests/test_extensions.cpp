@@ -528,6 +528,75 @@ TEST(ext_newline_preserves_existing_text) {
   CHECK(row.substr(0, 10) == "AXCDEFGHIJ");
 }
 
+TEST(ext_legacy_open_sequential) {
+  std::string path = "/tmp/lcbasic_legacy_seq.txt";
+  std::remove(path.c_str());
+  auto r = e2e::run(
+      "10 OPEN \"O\", #1, \"" + path + "\"\n"
+      "20 PRINT #1, \"hello\"\n"
+      "30 PRINT #1, \"world\"\n"
+      "40 CLOSE 1\n"
+      "50 OPEN \"I\", 1, \"" + path + "\"\n"
+      "60 PRINT LOF(1)\n"
+      "70 LINE INPUT #1, A$\n"
+      "80 PRINT A$\n"
+      "90 CLOSE #1\n"
+      "100 END");
+  std::remove(path.c_str());
+  REQUIRE(r.ran);
+  // "hello\nworld\n" is 12 bytes.
+  CHECK(r.output == " 12 \nhello\n");
+}
+
+TEST(ext_legacy_open_append_and_close_all) {
+  std::string path = "/tmp/lcbasic_legacy_app.txt";
+  {
+    std::ofstream f(path);
+    f << "first\n";
+  }
+  auto r = e2e::run(
+      "10 OPEN \"A\", #1, \"" + path + "\"\n"
+      "20 PRINT #1, \"second\"\n"
+      "30 CLOSE\n"
+      "40 OPEN \"I\", #1, \"" + path + "\"\n"
+      "50 LINE INPUT #1, A$: LINE INPUT #1, B$\n"
+      "60 PRINT A$; \"/\"; B$\n"
+      "70 CLOSE #1\n"
+      "80 END");
+  std::remove(path.c_str());
+  REQUIRE(r.ran);
+  CHECK(r.output == "first/second\n");
+}
+
+TEST(ext_legacy_open_random) {
+  std::string path = "/tmp/lcbasic_legacy_rand.dat";
+  std::remove(path.c_str());
+  auto r = e2e::run(
+      "10 OPEN \"R\", #1, \"" + path + "\", 16\n"
+      "20 FIELD #1, 10 AS N$\n"
+      "30 LSET N$ = \"abc\"\n"
+      "40 PUT #1, 2\n"
+      "50 GET #1, 2\n"
+      "60 PRINT N$\n"
+      "70 PRINT LOC(1); LOF(1)\n"
+      "80 CLOSE #1\n"
+      "90 END");
+  std::remove(path.c_str());
+  REQUIRE(r.ran);
+  CHECK(r.output == "abc       \n 2  32 \n");
+}
+
+TEST(ext_freefile_and_cv_mk) {
+  auto r = e2e::run(
+      "10 PRINT FREEFILE\n"
+      "20 PRINT CVI(MKI$(-1234))\n"
+      "30 PRINT CVS(MKS$(1.5))\n"
+      "40 PRINT CVD(MKD$(2.25))\n"
+      "50 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == " 1 \n-1234 \n 1.5 \n 2.25 \n");
+}
+
 TEST(ext_dos_path_separators) {
   std::string dir = "/tmp/lcbasic_path_test";
   std::filesystem::remove_all(dir);

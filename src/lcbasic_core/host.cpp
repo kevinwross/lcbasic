@@ -106,6 +106,33 @@ std::string RealHost::file_read_line(int handle) {
   return line;
 }
 
+long RealHost::file_size(int handle) {
+  if (handle < 0 || handle >= static_cast<int>(files_.size())) return 0;
+  FileEntry& e = files_[handle];
+  auto& fs = e.fs;
+  fs.clear();
+  if (e.writing) {
+    std::streampos pos = fs.tellp();
+    fs.seekp(0, std::ios::end);
+    std::streampos end = fs.tellp();
+    if (pos != std::streampos(-1)) fs.seekp(pos);
+    return end == std::streampos(-1) ? 0 : static_cast<long>(end);
+  }
+  std::streampos pos = fs.tellg();
+  fs.seekg(0, std::ios::end);
+  std::streampos end = fs.tellg();
+  if (pos != std::streampos(-1)) fs.seekg(pos);
+  return end == std::streampos(-1) ? 0 : static_cast<long>(end);
+}
+
+long RealHost::file_tell(int handle) {
+  if (handle < 0 || handle >= static_cast<int>(files_.size())) return 0;
+  FileEntry& e = files_[handle];
+  std::streampos pos =
+      e.writing ? e.fs.tellp() : e.fs.tellg();
+  return pos == std::streampos(-1) ? 0 : static_cast<long>(pos);
+}
+
 double RealHost::timer() {
   using namespace std::chrono;
   auto now = system_clock::now().time_since_epoch();

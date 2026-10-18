@@ -388,35 +388,59 @@ bool Parser::parse_statement() {
       stmt.data = std::move(def);
     } else if (match(TokenType::KeywordOpen)) {
       OpenStmt open;
-      open.filename = parse_expression();
-      if (!open.filename) return false;
-      consume(TokenType::KeywordFor, "expected FOR after OPEN filename");
-      if (match(TokenType::KeywordOutput)) open.mode = "O";
-      else if (match(TokenType::KeywordInput)) open.mode = "I";
-      else if (match(TokenType::KeywordAppend)) open.mode = "A";
-      else if (match(TokenType::KeywordRandom)) open.mode = "R";
-      else if (match(TokenType::KeywordBinary)) open.mode = "B";
-      else error_at_current("expected INPUT/OUTPUT/APPEND/RANDOM after FOR");
-      consume(TokenType::KeywordAs, "expected AS after mode");
-      consume(TokenType::KeywordHash, "expected '#' after AS");
-      consume(TokenType::Number, "expected file number after '#'");
-      open.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
-      // Optional LEN= for RANDOM files (LEN is an identifier, not a keyword).
-      if (check(TokenType::Identifier) &&
-          tokens_[current_].lexeme.size() == 3 &&
-          (tokens_[current_].lexeme == "LEN" ||
-           tokens_[current_].lexeme == "len")) {
-        advance();  // LEN
-        consume(TokenType::Eq, "expected '=' after LEN");
-        open.record_len = parse_expression();
-        if (!open.record_len) return false;
+      auto first = parse_expression();
+      if (!first) return false;
+      if (match(TokenType::KeywordFor)) {
+        // Modern form: OPEN filename FOR mode AS #n [LEN=reclen]
+        open.filename = std::move(first);
+        if (match(TokenType::KeywordOutput)) open.mode = "O";
+        else if (match(TokenType::KeywordInput)) open.mode = "I";
+        else if (match(TokenType::KeywordAppend)) open.mode = "A";
+        else if (match(TokenType::KeywordRandom)) open.mode = "R";
+        else if (match(TokenType::KeywordBinary)) open.mode = "B";
+        else error_at_current("expected INPUT/OUTPUT/APPEND/RANDOM after FOR");
+        consume(TokenType::KeywordAs, "expected AS after mode");
+        consume(TokenType::KeywordHash, "expected '#' after AS");
+        consume(TokenType::Number, "expected file number after '#'");
+        open.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+        // Optional LEN= for RANDOM files (LEN is an identifier, not a keyword).
+        if (check(TokenType::Identifier) &&
+            tokens_[current_].lexeme.size() == 3 &&
+            tokens_[current_].lexeme == "LEN") {
+          advance();  // LEN
+          consume(TokenType::Eq, "expected '=' after LEN");
+          open.record_len = parse_expression();
+          if (!open.record_len) return false;
+        }
+      } else if (match(TokenType::Comma)) {
+        // Legacy form: OPEN mode, [#]filenum, filename [, reclen]
+        open.mode_expr = std::move(first);
+        match(TokenType::KeywordHash);  // optional '#'
+        open.filenum_expr = parse_expression();
+        if (!open.filenum_expr) return false;
+        consume(TokenType::Comma,
+                "expected ',' after file number in OPEN");
+        open.filename = parse_expression();
+        if (!open.filename) return false;
+        if (match(TokenType::Comma)) {
+          open.record_len = parse_expression();
+          if (!open.record_len) return false;
+        }
+      } else {
+        error_at_current("expected FOR or ',' after OPEN");
+        return false;
       }
       stmt.data = std::move(open);
     } else if (match(TokenType::KeywordClose)) {
       CloseStmt close;
-      consume(TokenType::KeywordHash, "expected '#' after CLOSE");
-      consume(TokenType::Number, "expected file number after '#'");
-      close.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      if (!is_at_end() && !check(TokenType::Newline) &&
+          !check(TokenType::Colon)) {
+        match(TokenType::KeywordHash);  // '#' is optional
+        consume(TokenType::Number, "expected file number after CLOSE");
+        close.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      } else {
+        close.filenum = 0;  // CLOSE with no arguments closes all files
+      }
       stmt.data = std::move(close);
     } else if (match(TokenType::KeywordPrint)) {
       consume(TokenType::KeywordHash, "expected '#' after PRINT");
@@ -1438,7 +1462,7 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     if (auto b = find_builtin(name)) {
       if (*b == Builtin::Csrlin || *b == Builtin::Rnd ||
           *b == Builtin::Inkey || *b == Builtin::Date ||
-          *b == Builtin::Time) {
+          *b == Builtin::Time || *b == Builtin::Freefile) {
         auto e = std::make_unique<Expr>();
         e->data = FunctionExpr{std::move(name), {}};
         return e;

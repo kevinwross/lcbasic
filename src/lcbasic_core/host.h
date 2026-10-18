@@ -21,6 +21,8 @@ public:
   virtual bool file_eof(int handle) = 0;
   virtual void file_write(int handle, const std::string& text) = 0;
   virtual std::string file_read_line(int handle) = 0;
+  virtual long file_size(int handle) = 0;   // LOF
+  virtual long file_tell(int handle) = 0;   // LOC (sequential)
 
   // ----- Clock / randomness -----
   virtual double timer() = 0;   // seconds since midnight (GW-BASIC TIMER)
@@ -58,6 +60,8 @@ public:
   bool file_eof(int handle) override;
   void file_write(int handle, const std::string& text) override;
   std::string file_read_line(int handle) override;
+  long file_size(int handle) override;
+  long file_tell(int handle) override;
 
   double timer() override;
   double rnd(double seed) override;

@@ -38,6 +38,7 @@ enum class OpCode : std::uint8_t {
   SetOptionBase,// set OPTION BASE
   NextZone,     // PRINT comma: advance to the next 14-column print zone
   Open,         // OPEN filenum AS filename (mode)
+  OpenGeneric,  // stack: filename, mode, filenum, reclen
   Close,        // CLOSE filenum
   PrintFile,    // PRINT #filenum, values
   InputFile,    // INPUT #filenum, variable

@@ -54,6 +54,15 @@ const std::unordered_map<std::string, Builtin>& table() {
       {"TIME$", Builtin::Time},
       {"INPUT$", Builtin::InputDollar},
       {"EOF", Builtin::Eof},
+      {"LOF", Builtin::Lof},
+      {"LOC", Builtin::Loc},
+      {"FREEFILE", Builtin::Freefile},
+      {"CVI", Builtin::CVi},
+      {"CVS", Builtin::CVs},
+      {"CVD", Builtin::CVd},
+      {"MKI$", Builtin::Mki},
+      {"MKS$", Builtin::Mks},
+      {"MKD$", Builtin::Mkd},
   };
   return t;
 }

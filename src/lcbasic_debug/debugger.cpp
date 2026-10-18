@@ -87,6 +87,7 @@ const char* opcode_name(OpCode op) {
     case OpCode::LoadTemp: return "LTEMP";
     case OpCode::Stop: return "STOP";
     case OpCode::Open: return "OPEN";
+    case OpCode::OpenGeneric: return "OPEN*";
     case OpCode::Close: return "CLOSE";
     case OpCode::PrintFile: return "PRINT#";
     case OpCode::InputFile: return "INPUT#";

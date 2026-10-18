@@ -147,6 +147,7 @@ private:
     std::string buffer;
     std::vector<RandomField> fields;
     int next_offset = 0;
+    long last_record = 0;  // for LOC()
   };
   std::unordered_map<int, RandomFile> random_files_;
 

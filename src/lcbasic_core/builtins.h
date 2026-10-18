@@ -11,7 +11,8 @@ enum class Builtin : std::uint8_t {
   Len, Left, Right, Mid, Instr, Val, Str, Chr, Asc, Space, StringFn,
   UCase, LCase, Hex, Oct,
   Tab, Spc, Fre, Pos, Csrlin, Inkey, Date, Time, InputDollar,
-  Eof,
+  Eof, Lof, Loc, Freefile,
+  CVi, CVs, CVd, Mki, Mks, Mkd,
 };
 
 // Look up a built-in by (case-insensitive) name. Names include '$' where

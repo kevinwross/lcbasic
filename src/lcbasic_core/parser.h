@@ -116,8 +116,11 @@ struct DefFnStmt {
 };
 
 struct OpenStmt {
-  std::int32_t filenum;
+  std::int32_t filenum = 0;
   std::string mode;   // "I", "O", "A", "R", "B"
+  // Legacy form: OPEN mode, [#]filenum, filename [, reclen]
+  std::unique_ptr<Expr> mode_expr;
+  std::unique_ptr<Expr> filenum_expr;
   std::unique_ptr<Expr> filename;
   std::unique_ptr<Expr> record_len;  // optional LEN= for RANDOM
 };

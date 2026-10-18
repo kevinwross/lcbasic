@@ -164,6 +164,11 @@ Notes:
   are 1-based like GW-BASIC.
 - Random-access files: `OPEN ... FOR RANDOM [LEN=]`, `FIELD`, `LSET`/`RSET`,
   `GET`/`PUT`, `CLOSE`.
+- Both `OPEN` syntaxes are supported: `OPEN file FOR mode AS #n [LEN=]` and
+  the legacy `OPEN mode, [#]n, file [, reclen]` with `"I"/"O"/"A"/"R"`
+  (or `"INPUT"/"OUTPUT"/"APPEND"/"RANDOM"`). `CLOSE [#]n` and bare
+  `CLOSE` (close all) work; `LOF`, `LOC`, `FREEFILE`, and
+  `CVI`/`CVS`/`CVD`/`MKI$`/`MKS$`/`MKD$` are implemented.
 - Built-in functions: numeric (`ABS`…`CDBL`, `RND`), string (`LEN`…`OCT$`),
   and `TAB`/`SPC`/`FRE`/`POS`/`CSRLIN`.
 - Graphics (`PSET`/`LINE`/`CIRCLE`/…) and sound (`SOUND`/`BEEP`/`PLAY`)
