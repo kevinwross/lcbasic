@@ -1,0 +1,4 @@
+10 DEFSNG A-Z
+20 X = 1 / 3
+30 PRINT X
+40 END

@@ -116,6 +116,15 @@ stack (GOSUB + FOR frames), memory read/patch, bytecode disassembly, snapshots.
 | M6 | Differential hardening, `xfail` registry, conformance corpus | ✅ |
 | M7 | GPU screen backend, sound, time-travel debugging | ⏳ |
 
+Notes:
+- DOS commands (`CHDIR`/`MKDIR`/`RMDIR`/`KILL`/`NAME`/`FILES`/`SHELL`) are
+  implemented via `Host` using `std::filesystem`.
+- Event trapping: `ON KEY/TIMER/PLAY/COM/PEN/STRIG ... GOSUB` and the
+  `... ON/OFF/STOP` controls are parsed and stored. **TIMER** events fire
+  at line boundaries using the `Host` clock; KEY/PLAY/COM/PEN/STRIG
+  handlers are armed but not fired (no real event source yet — planned to
+  be virtualised through `Host`).
+
 ---
 
 ## 8. Risks

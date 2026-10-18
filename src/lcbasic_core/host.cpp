@@ -1,9 +1,44 @@
 #include "host.h"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+
+namespace {
+
+// Simple DOS-style wildcard match supporting '*' and '?'.
+bool wildcard_match(const std::string& pattern, const std::string& name) {
+  std::size_t p = 0, n = 0;
+  std::size_t star = std::string::npos, mark = 0;
+  while (n < name.size()) {
+    if (p < pattern.size() &&
+        (pattern[p] == '?' || pattern[p] == name[n])) {
+      p++;
+      n++;
+    } else if (p < pattern.size() && pattern[p] == '*') {
+      star = p++;
+      mark = n;
+    } else if (star != std::string::npos) {
+      p = star + 1;
+      n = ++mark;
+    } else {
+      return false;
+    }
+  }
+  while (p < pattern.size() && pattern[p] == '*') p++;
+  return p == pattern.size();
+}
+
+std::string lower(std::string s) {
+  for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return s;
+}
+
+}  // namespace
 
 int RealHost::file_open(const std::string& filename,
                         const std::string& mode) {
@@ -60,4 +95,53 @@ double RealHost::timer() {
 
 double RealHost::rnd(double /*seed*/) {
   return static_cast<double>(std::rand()) / RAND_MAX;
+}
+
+// ----- DOS / filesystem -----
+
+bool RealHost::dos_chdir(const std::string& path) {
+  std::error_code ec;
+  std::filesystem::current_path(path, ec);
+  return !ec;
+}
+
+bool RealHost::dos_mkdir(const std::string& path) {
+  std::error_code ec;
+  return std::filesystem::create_directory(path, ec);
+}
+
+bool RealHost::dos_rmdir(const std::string& path) {
+  std::error_code ec;
+  return std::filesystem::remove(path, ec);
+}
+
+bool RealHost::dos_kill(const std::string& path) {
+  std::error_code ec;
+  return std::filesystem::remove(path, ec);
+}
+
+bool RealHost::dos_rename(const std::string& from, const std::string& to) {
+  std::error_code ec;
+  std::filesystem::rename(from, to, ec);
+  return !ec;
+}
+
+std::vector<std::string> RealHost::dos_files(const std::string& pattern) {
+  std::vector<std::string> out;
+  std::error_code ec;
+  std::string pat = pattern.empty() ? "*.*" : pattern;
+  std::string pat_lower = lower(pat);
+  for (const auto& entry : std::filesystem::directory_iterator(".", ec)) {
+    std::string name = entry.path().filename().string();
+    if (wildcard_match(pat_lower, lower(name))) {
+      out.push_back(name);
+    }
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+int RealHost::dos_shell(const std::string& command) {
+  if (command.empty()) return 0;
+  return std::system(command.c_str());
 }

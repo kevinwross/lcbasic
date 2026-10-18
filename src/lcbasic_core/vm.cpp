@@ -2,6 +2,7 @@
 #include "number_format.h"
 
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 #include <stdexcept>
 
@@ -25,7 +26,14 @@ std::string Vm::var_name(std::uint8_t idx) const {
 }
 
 VarType Vm::var_type(std::uint8_t idx) const {
-  return deduce_var_type(var_name(idx));
+  std::string name = var_name(idx);
+  if (has_type_suffix(name)) return deduce_var_type(name);
+  if (!name.empty()) {
+    char c = static_cast<char>(
+        std::toupper(static_cast<unsigned char>(name[0])));
+    if (c >= 'A' && c <= 'Z') return letter_types_[c - 'A'];
+  }
+  return VarType::VT_DBL;
 }
 
 std::int32_t Vm::current_line() const {
@@ -60,6 +68,21 @@ std::optional<std::size_t> Vm::find_pc_for_line(std::int32_t line) const {
   errors_.push_back("error " + std::to_string(error_code) + " at line " +
                     std::to_string(line));
   throw std::runtime_error("__fatal__");
+}
+
+bool Vm::check_events() {
+  constexpr int kTimer = static_cast<int>(EventKind::Timer);
+  EventSlot& timer = events_[kTimer];
+  if (!timer.enabled || timer.stopped || timer.in_handler) return false;
+  if (timer.handler_pc == 0) return false;
+  double now = host_.timer();
+  if (now - timer.last_fire < timer.interval) return false;
+  timer.last_fire = now;
+  timer.in_handler = true;
+  event_depth_ = call_stack_.size();
+  call_stack_.push_back(ip_);
+  ip_ = timer.handler_pc;
+  return true;
 }
 
 void Vm::load(const std::vector<Instruction>& code,
@@ -97,6 +120,11 @@ void Vm::load(const std::vector<Instruction>& code,
   call_stack_.clear();
   for_stack_.clear();
   arrays_ = ArrayStore{};
+
+  letter_types_.fill(VarType::VT_DBL);
+  for (auto& ev : events_) ev = EventSlot{};
+  event_depth_ = 0;
+  last_line_ = -1;
 }
 
 bool Vm::run() {
@@ -119,6 +147,14 @@ ExecStatus Vm::step_one() {
 // The hook (if set) is consulted before each instruction.
 ExecStatus Vm::execute(bool single_step) {
   while (ip_ < code_.size()) {
+    // Fire due timer events at line boundaries.
+    if (code_[ip_].line != last_line_) {
+      last_line_ = code_[ip_].line;
+      if (check_events()) {
+        continue;  // ip_ moved to the handler
+      }
+    }
+
     if (hook_) {
       if (hook_->on_instruction(ip_, code_[ip_].line, call_stack_.size())) {
         return ExecStatus::Paused;
@@ -269,6 +305,12 @@ ExecStatus Vm::execute(bool single_step) {
           }
           ip_ = call_stack_.back();
           call_stack_.pop_back();
+          // If we just returned from a timer event handler, clear its flag.
+          constexpr int kTimer = static_cast<int>(EventKind::Timer);
+          if (events_[kTimer].in_handler &&
+              call_stack_.size() <= event_depth_) {
+            events_[kTimer].in_handler = false;
+          }
           break;
         }
         case OpCode::ForInit: {
@@ -382,6 +424,99 @@ ExecStatus Vm::execute(bool single_step) {
           int spaces = next_zone - col;
           if (spaces < 0) spaces = 0;
           for (int i = 0; i < spaces; i++) screen_.putc(' ');
+          break;
+        }
+        case OpCode::DefType: {
+          char lo = static_cast<char>(inst.operand & 0xFF);
+          char hi = static_cast<char>((inst.operand >> 8) & 0xFF);
+          VarType t = static_cast<VarType>((inst.operand >> 16) & 0xFF);
+          if (lo < 'A') lo = 'A';
+          if (hi > 'Z') hi = 'Z';
+          for (char c = lo; c <= hi; c++) {
+            letter_types_[c - 'A'] = t;
+          }
+          break;
+        }
+        case OpCode::TimerFunc: {
+          push(Value(host_.timer()));
+          break;
+        }
+        case OpCode::ChDir: {
+          std::string path = pop().as_string();
+          if (!host_.dos_chdir(path)) trap_error(76, current_line);
+          break;
+        }
+        case OpCode::MkDir: {
+          std::string path = pop().as_string();
+          if (!host_.dos_mkdir(path)) trap_error(76, current_line);
+          break;
+        }
+        case OpCode::RmDir: {
+          std::string path = pop().as_string();
+          if (!host_.dos_rmdir(path)) trap_error(76, current_line);
+          break;
+        }
+        case OpCode::KillFile: {
+          std::string path = pop().as_string();
+          if (!host_.dos_kill(path)) trap_error(53, current_line);
+          break;
+        }
+        case OpCode::NameFile: {
+          std::string from = pop().as_string();
+          std::string to = pop().as_string();
+          if (!host_.dos_rename(from, to)) trap_error(53, current_line);
+          break;
+        }
+        case OpCode::Files: {
+          std::string pattern = pop().as_string();
+          auto files = host_.dos_files(pattern);
+          for (const auto& f : files) {
+            screen_.print(f);
+            screen_.print("\n");
+          }
+          break;
+        }
+        case OpCode::Shell: {
+          std::string cmd = pop().as_string();
+          host_.dos_shell(cmd);
+          break;
+        }
+        case OpCode::OnEvent: {
+          double packed = pop().as_double();
+          int source = static_cast<int>(packed) & 0xFFFF;
+          int kind = (static_cast<int>(packed) >> 16) & 0xFF;
+          if (kind < 0 || kind >= 6) {
+            trap_error(5, current_line);
+            break;
+          }
+          EventSlot& ev = events_[kind];
+          ev.source = source;
+          ev.handler_pc = inst.operand;  // patched to target PC by fixup
+          ev.handler_line = current_line;
+          if (kind == static_cast<int>(EventKind::Timer)) {
+            ev.interval = source > 0 ? static_cast<double>(source) : 1.0;
+          }
+          break;
+        }
+        case OpCode::EventControl: {
+          int source = inst.operand & 0xFFFF;
+          int kind = (inst.operand >> 16) & 0xFF;
+          int action = (inst.operand >> 24) & 0xFF;
+          if (kind < 0 || kind >= 6) {
+            trap_error(5, current_line);
+            break;
+          }
+          EventSlot& ev = events_[kind];
+          if (action == 0) {        // ON
+            ev.enabled = true;
+            ev.stopped = false;
+            ev.last_fire = host_.timer();
+          } else if (action == 1) { // OFF
+            ev.enabled = false;
+          } else {                  // STOP
+            ev.stopped = true;
+          }
+          (void)source;
           break;
         }
         case OpCode::Open: {

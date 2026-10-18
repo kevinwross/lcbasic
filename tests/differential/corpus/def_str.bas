@@ -1,0 +1,6 @@
+10 DEFSTR A-Z
+20 A = "HELLO"
+30 B = "WORLD"
+40 C = A + B
+50 PRINT C
+60 END

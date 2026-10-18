@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -67,13 +68,14 @@ struct Value {
         data);
   }
 
-  // Convert this value to the given VarType, truncating/coercing as needed.
+  // Convert this value to the given VarType, rounding to nearest for
+  // integers (GW-BASIC rounds, it does not truncate).
   Value coerce(VarType t) const {
     switch (t) {
       case VarType::VT_INT16:
-        return Value(static_cast<Int16>(as_double()));
+        return Value(static_cast<Int16>(std::round(as_double())));
       case VarType::VT_INT32:
-        return Value(static_cast<Int32>(as_double()));
+        return Value(static_cast<Int32>(std::round(as_double())));
       case VarType::VT_SGL:
         return Value(static_cast<Sgl>(as_double()));
       case VarType::VT_DBL:
@@ -97,6 +99,13 @@ inline VarType deduce_var_type(const std::string& name) {
     case '$': return VarType::VT_STR;
     default:  return VarType::VT_DBL;
   }
+}
+
+// True if the name has an explicit type suffix.
+inline bool has_type_suffix(const std::string& name) {
+  if (name.empty()) return false;
+  char c = name.back();
+  return c == '%' || c == '&' || c == '!' || c == '#' || c == '$';
 }
 
 // Strip the type suffix from a variable name.

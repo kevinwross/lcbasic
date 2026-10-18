@@ -24,6 +24,15 @@ public:
   // ----- Clock / randomness -----
   virtual double timer() = 0;   // seconds since midnight (GW-BASIC TIMER)
   virtual double rnd(double seed) = 0;
+
+  // ----- DOS / filesystem -----
+  virtual bool dos_chdir(const std::string& path) = 0;
+  virtual bool dos_mkdir(const std::string& path) = 0;
+  virtual bool dos_rmdir(const std::string& path) = 0;
+  virtual bool dos_kill(const std::string& path) = 0;
+  virtual bool dos_rename(const std::string& from, const std::string& to) = 0;
+  virtual std::vector<std::string> dos_files(const std::string& pattern) = 0;
+  virtual int dos_shell(const std::string& command) = 0;
 };
 
 // Real Host implementation backed by the OS filesystem.
@@ -37,6 +46,14 @@ public:
 
   double timer() override;
   double rnd(double seed) override;
+
+  bool dos_chdir(const std::string& path) override;
+  bool dos_mkdir(const std::string& path) override;
+  bool dos_rmdir(const std::string& path) override;
+  bool dos_kill(const std::string& path) override;
+  bool dos_rename(const std::string& from, const std::string& to) override;
+  std::vector<std::string> dos_files(const std::string& pattern) override;
+  int dos_shell(const std::string& command) override;
 
 private:
   struct FileEntry {

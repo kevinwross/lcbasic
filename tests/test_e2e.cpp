@@ -8,6 +8,7 @@
 
 #include <sstream>
 #include <cstdio>
+#include <filesystem>
 
 static std::unique_ptr<Program> compile_source(const std::string& source) {
   auto program = std::make_unique<Program>();
@@ -259,4 +260,150 @@ TEST(e2e_error_handling) {
   std::string out = screen.last_output();
   CHECK(out.find("error:") != std::string::npos);
   CHECK(out.find("line:") != std::string::npos);
+}
+
+// ---------- M2 completion: DEF FN, DEFINT/DEFSTR ----------
+
+TEST(e2e_def_fn_single) {
+  auto program = compile_source(
+      "10 DEF FN SQUARE(X) = X * X\n20 PRINT FN SQUARE(5)\n30 END");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  REQUIRE(run_compiled(compiler, screen));
+  screen.refresh();
+  CHECK(screen.last_output() == " 25 \n");
+}
+
+TEST(e2e_def_fn_multiparam) {
+  auto program = compile_source(
+      "10 DEF FN ADD(A, B) = A + B\n20 PRINT FN ADD(10, 20)\n30 END");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  REQUIRE(run_compiled(compiler, screen));
+  screen.refresh();
+  CHECK(screen.last_output() == " 30 \n");
+}
+
+TEST(e2e_def_fn_nested) {
+  auto program = compile_source(
+      "10 DEF FN S(X) = X * X\n"
+      "20 DEF FN Q(X) = FN S(X) + 1\n"
+      "30 PRINT FN Q(4)\n40 END");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  REQUIRE(run_compiled(compiler, screen));
+  screen.refresh();
+  CHECK(screen.last_output() == " 17 \n");
+}
+
+TEST(e2e_defint_rounds) {
+  auto program = compile_source(
+      "10 DEFINT A-Z\n20 X = 3.5\n30 PRINT X\n40 Y = 2.5\n50 PRINT Y\n"
+      "60 Z = 3.4\n70 PRINT Z\n80 END");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  REQUIRE(run_compiled(compiler, screen));
+  screen.refresh();
+  // 3.5 -> 4, 2.5 -> 3, 3.4 -> 3 (GW-BASIC rounds to nearest)
+  CHECK(screen.last_output() == " 4 \n 3 \n 3 \n");
+}
+
+TEST(e2e_defstr) {
+  auto program = compile_source(
+      "10 DEFSTR A-Z\n20 A = \"HELLO\"\n30 PRINT A\n40 END");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+  HeadlessScreen screen(25, 80);
+  REQUIRE(run_compiled(compiler, screen));
+  screen.refresh();
+  CHECK(screen.last_output() == "HELLO\n");
+}
+
+// ---------- M3 completion: DOS commands, event trapping ----------
+
+namespace {
+// A host with a deterministic advancing clock, so timer events fire
+// without waiting.
+class FakeTimerHost : public RealHost {
+public:
+  double timer() override {
+    now_ += 0.6;
+    return now_;
+  }
+
+private:
+  double now_ = 0.0;
+};
+}  // namespace
+
+TEST(e2e_timer_event) {
+  auto program = compile_source(
+      "10 ON TIMER(1) GOSUB 100\n"
+      "20 TIMER ON\n"
+      "30 FOR I = 1 TO 5\n"
+      "40 NEXT I\n"
+      "50 TIMER OFF\n"
+      "60 PRINT \"DONE\"\n"
+      "70 END\n"
+      "100 PRINT \"TICK\"\n"
+      "110 RETURN");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+
+  HeadlessScreen screen(25, 80);
+  FakeTimerHost host;
+  Vm vm(screen, host);
+  vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
+          compiler.variable_table(), compiler.variable_names(),
+          compiler.data_values());
+  REQUIRE(vm.run());
+  screen.refresh();
+  std::string out = screen.last_output();
+  CHECK(out.find("TICK") != std::string::npos);
+  CHECK(out.find("DONE") != std::string::npos);
+}
+
+TEST(e2e_dos_commands) {
+  std::string dir = "/tmp/lcbasic_dos_unit_test";
+  std::remove((dir + "/out.txt").c_str());
+  std::filesystem::remove_all(dir);
+
+  auto program = compile_source(
+      "10 MKDIR \"" + dir + "\"\n"
+      "20 CHDIR \"" + dir + "\"\n"
+      "30 SHELL \"echo hi > out.txt\"\n"
+      "40 FILES \"*.txt\"\n"
+      "50 KILL \"out.txt\"\n"
+      "60 CHDIR \"/tmp\"\n"
+      "70 RMDIR \"" + dir + "\"\n"
+      "80 PRINT \"DONE\"\n"
+      "90 END");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+
+  std::filesystem::path saved = std::filesystem::current_path();
+  HeadlessScreen screen(25, 80);
+  RealHost host;
+  Vm vm(screen, host);
+  vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
+          compiler.variable_table(), compiler.variable_names(),
+          compiler.data_values());
+  bool ok = vm.run();
+  std::filesystem::current_path(saved);
+  REQUIRE(ok);
+  screen.refresh();
+  std::string out = screen.last_output();
+  CHECK(out.find("out.txt") != std::string::npos);
+  CHECK(out.find("DONE") != std::string::npos);
 }

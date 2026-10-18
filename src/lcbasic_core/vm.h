@@ -5,6 +5,7 @@
 #include "screen.h"
 #include "value.h"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -116,6 +117,7 @@ private:
   ArrayStore arrays_;                      // DIM'd arrays
   DataPool data_pool_;                     // DATA pool
   std::int32_t option_base_ = 0;           // OPTION BASE setting
+  std::array<VarType, 26> letter_types_;   // DEFINT/DEFSNG/DEFDBL/DEFSTR
   std::vector<std::string> variable_names_; // index -> name
   std::vector<int> file_handles_;          // filenum -> host file handle (-1 = closed)
   std::vector<Value> stack_;
@@ -136,6 +138,21 @@ private:
   int erl_line_ = 0;
   bool in_error_handler_ = false;
 
+  // Event trapping state (one slot per event kind).
+  struct EventSlot {
+    std::int32_t handler_line = -1;
+    std::size_t handler_pc = 0;
+    int source = 0;          // key number / timer interval / etc.
+    bool enabled = false;
+    bool stopped = false;
+    double interval = 0.0;   // TIMER interval in seconds
+    double last_fire = 0.0;
+    bool in_handler = false;
+  };
+  std::array<EventSlot, 6> events_;  // indexed by EventKind
+  std::size_t event_depth_ = 0;
+  std::int32_t last_line_ = -1;
+
   std::size_t ip_ = 0;
   bool halted_ = false;
   DbgHook* hook_ = nullptr;
@@ -147,5 +164,7 @@ private:
   int file_handle_for(std::uint8_t filenum_idx);
   std::optional<std::size_t> find_pc_for_line(std::int32_t line) const;
   [[noreturn]] void trap_error(int error_code, std::int32_t line);
+  // Fire a due timer event; returns true if it changed ip_.
+  bool check_events();
   ExecStatus execute(bool single_step);
 };

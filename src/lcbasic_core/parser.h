@@ -28,10 +28,15 @@ struct BinaryExpr {
   TokenType op;
   std::unique_ptr<Expr> right;
 };
+struct FnCallExpr {
+  std::string name;
+  std::vector<std::unique_ptr<Expr>> args;
+};
+struct BuiltinExpr { std::string name; };
 
 struct Expr {
   std::variant<NumberExpr, StringExpr, VariableExpr, ArrayRefExpr,
-               BinaryExpr>
+               BinaryExpr, FnCallExpr, BuiltinExpr>
       data;
 };
 
@@ -93,7 +98,7 @@ struct RestoreStmt {};
 
 struct DefFnStmt {
   std::string name;
-  std::string param;
+  std::vector<std::string> params;
   std::unique_ptr<Expr> body;
 };
 
@@ -123,13 +128,49 @@ struct ResumeStmt {
   std::int32_t target_line = -1; // RESUME line
 };
 
+// DEFINT/DEFSNG/DEFDBL/DEFSTR: default type for variables starting with
+// the given letter ranges (e.g. DEFINT A-Z).
+struct DefTypeStmt {
+  VarType type;
+  std::vector<std::pair<char, char>> ranges;  // inclusive letter ranges
+};
+
+// DOS / filesystem commands.
+struct ChDirStmt { std::unique_ptr<Expr> path; };
+struct MkDirStmt { std::unique_ptr<Expr> path; };
+struct RmDirStmt { std::unique_ptr<Expr> path; };
+struct KillStmt { std::unique_ptr<Expr> path; };
+struct NameStmt {
+  std::unique_ptr<Expr> old_name;
+  std::unique_ptr<Expr> new_name;
+};
+struct FilesStmt { std::unique_ptr<Expr> pattern; };  // may be null
+struct ShellStmt { std::unique_ptr<Expr> command; };  // may be null
+
+// Event trapping.
+enum class EventKind { Key, Timer, Play, Com, Pen, Strig };
+
+struct OnEventStmt {
+  EventKind kind = EventKind::Timer;
+  int source = 0;              // key number / timer interval / etc.
+  std::int32_t target_line = -1;
+};
+
+struct EventControlStmt {
+  EventKind kind = EventKind::Timer;
+  int source = 0;
+  int action = 0;  // 0 = ON, 1 = OFF, 2 = STOP
+};
+
 struct Statement {
   std::int32_t line_number;
   std::variant<PrintStmt, LetStmt, GotoStmt, IfStmt, ForStmt, NextStmt,
                GosubStmt, ReturnStmt, EndStmt, StopStmt, DimStmt,
                OptionBaseStmt, DataStmt, ReadStmt, RestoreStmt, DefFnStmt,
                OpenStmt, CloseStmt, PrintFileStmt, InputFileStmt,
-               OnErrorStmt, ResumeStmt>
+               OnErrorStmt, ResumeStmt, DefTypeStmt, ChDirStmt, MkDirStmt,
+               RmDirStmt, KillStmt, NameStmt, FilesStmt, ShellStmt,
+               OnEventStmt, EventControlStmt>
       data;
 };
 

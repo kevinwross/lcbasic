@@ -1,5 +1,6 @@
 #include "parser.h"
 
+#include <cctype>
 #include <sstream>
 
 Parser::Parser(std::vector<Token> tokens) : tokens_(std::move(tokens)) {}
@@ -304,9 +305,11 @@ bool Parser::parse_statement() {
       consume(TokenType::Identifier, "expected function name after DEF FN");
       def.name = tokens_[current_ - 1].lexeme;
       consume(TokenType::LParen, "expected '(' after function name");
-      consume(TokenType::Identifier, "expected parameter name");
-      def.param = tokens_[current_ - 1].lexeme;
-      consume(TokenType::RParen, "expected ')' after parameter name");
+      do {
+        consume(TokenType::Identifier, "expected parameter name");
+        def.params.push_back(tokens_[current_ - 1].lexeme);
+      } while (match(TokenType::Comma));
+      consume(TokenType::RParen, "expected ')' after parameter list");
       consume(TokenType::Eq, "expected '=' after DEF FN parameter");
       def.body = parse_expression();
       if (!def.body) return false;
@@ -367,12 +370,48 @@ bool Parser::parse_statement() {
       } while (match(TokenType::Comma));
       stmt.data = std::move(ifile);
     } else if (match(TokenType::KeywordOn)) {
-      consume(TokenType::KeywordError, "expected ERROR after ON");
-      consume(TokenType::KeywordGoto, "expected GOTO after ON ERROR");
-      OnErrorStmt oerr;
-      consume(TokenType::Number, "expected line number after ON ERROR GOTO");
-      oerr.target_line = static_cast<std::int32_t>(tokens_[current_ - 1].number);
-      stmt.data = std::move(oerr);
+      if (match(TokenType::KeywordError)) {
+        consume(TokenType::KeywordGoto, "expected GOTO after ON ERROR");
+        OnErrorStmt oerr;
+        consume(TokenType::Number, "expected line number after ON ERROR GOTO");
+        oerr.target_line =
+            static_cast<std::int32_t>(tokens_[current_ - 1].number);
+        stmt.data = std::move(oerr);
+      } else {
+        // ON KEY(n) GOSUB line / ON TIMER(n) GOSUB line / ...
+        OnEventStmt ev;
+        if (match(TokenType::KeywordKey)) {
+          ev.kind = EventKind::Key;
+          if (match(TokenType::LParen)) {
+            consume(TokenType::Number, "expected key number");
+            ev.source = static_cast<int>(tokens_[current_ - 1].number);
+            consume(TokenType::RParen, "expected ')' after key number");
+          }
+        } else if (match(TokenType::KeywordTimer)) {
+          ev.kind = EventKind::Timer;
+          if (match(TokenType::LParen)) {
+            consume(TokenType::Number, "expected timer interval");
+            ev.source = static_cast<int>(tokens_[current_ - 1].number);
+            consume(TokenType::RParen, "expected ')' after timer interval");
+          }
+        } else if (match(TokenType::KeywordPlay)) {
+          ev.kind = EventKind::Play;
+        } else if (match(TokenType::KeywordCom)) {
+          ev.kind = EventKind::Com;
+        } else if (match(TokenType::KeywordPen)) {
+          ev.kind = EventKind::Pen;
+        } else if (match(TokenType::KeywordStrig)) {
+          ev.kind = EventKind::Strig;
+        } else {
+          error_at_current("expected ERROR or an event after ON");
+          return false;
+        }
+        consume(TokenType::KeywordGosub, "expected GOSUB after ON event");
+        consume(TokenType::Number, "expected line number after GOSUB");
+        ev.target_line =
+            static_cast<std::int32_t>(tokens_[current_ - 1].number);
+        stmt.data = std::move(ev);
+      }
     } else if (match(TokenType::KeywordResume)) {
       ResumeStmt res;
       if (match(TokenType::KeywordNext)) {
@@ -382,6 +421,120 @@ bool Parser::parse_statement() {
         res.target_line = static_cast<std::int32_t>(t.number);
       }
       stmt.data = std::move(res);
+    } else if (check(TokenType::KeywordDefInt) ||
+               check(TokenType::KeywordDefSng) ||
+               check(TokenType::KeywordDefDbl) ||
+               check(TokenType::KeywordDefStr)) {
+      DefTypeStmt dt;
+      TokenType kw = peek().type;
+      if (kw == TokenType::KeywordDefInt) dt.type = VarType::VT_INT16;
+      else if (kw == TokenType::KeywordDefSng) dt.type = VarType::VT_SGL;
+      else if (kw == TokenType::KeywordDefDbl) dt.type = VarType::VT_DBL;
+      else dt.type = VarType::VT_STR;
+      advance();  // consume DEF* keyword
+      do {
+        consume(TokenType::Identifier, "expected letter after DEF");
+        char lo = static_cast<char>(
+            std::toupper(static_cast<unsigned char>(
+                tokens_[current_ - 1].lexeme[0])));
+        char hi = lo;
+        if (match(TokenType::Minus)) {
+          consume(TokenType::Identifier, "expected letter after '-'");
+          hi = static_cast<char>(
+              std::toupper(static_cast<unsigned char>(
+                  tokens_[current_ - 1].lexeme[0])));
+        }
+        dt.ranges.push_back({lo, hi});
+      } while (match(TokenType::Comma));
+      stmt.data = std::move(dt);
+    } else if (match(TokenType::KeywordChDir)) {
+      ChDirStmt c;
+      c.path = parse_expression();
+      if (!c.path) return false;
+      stmt.data = std::move(c);
+    } else if (match(TokenType::KeywordMkDir)) {
+      MkDirStmt c;
+      c.path = parse_expression();
+      if (!c.path) return false;
+      stmt.data = std::move(c);
+    } else if (match(TokenType::KeywordRmDir)) {
+      RmDirStmt c;
+      c.path = parse_expression();
+      if (!c.path) return false;
+      stmt.data = std::move(c);
+    } else if (match(TokenType::KeywordKill)) {
+      KillStmt c;
+      c.path = parse_expression();
+      if (!c.path) return false;
+      stmt.data = std::move(c);
+    } else if (match(TokenType::KeywordName)) {
+      NameStmt n;
+      n.old_name = parse_expression();
+      if (!n.old_name) return false;
+      consume(TokenType::KeywordAs, "expected AS in NAME");
+      n.new_name = parse_expression();
+      if (!n.new_name) return false;
+      stmt.data = std::move(n);
+    } else if (match(TokenType::KeywordFiles)) {
+      FilesStmt f;
+      if (!check(TokenType::Newline) && !check(TokenType::Colon) &&
+          !is_at_end()) {
+        f.pattern = parse_expression();
+        if (!f.pattern) return false;
+      }
+      stmt.data = std::move(f);
+    } else if (match(TokenType::KeywordShell)) {
+      ShellStmt sh;
+      if (!check(TokenType::Newline) && !check(TokenType::Colon) &&
+          !is_at_end()) {
+        sh.command = parse_expression();
+        if (!sh.command) return false;
+      }
+      stmt.data = std::move(sh);
+    } else if (check(TokenType::KeywordKey) ||
+               check(TokenType::KeywordTimer) ||
+               check(TokenType::KeywordPlay) ||
+               check(TokenType::KeywordCom) ||
+               check(TokenType::KeywordPen) ||
+               check(TokenType::KeywordStrig)) {
+      // KEY(n) ON/OFF/STOP, TIMER ON/OFF/STOP, etc.
+      EventControlStmt ec;
+      TokenType kw = peek().type;
+      advance();
+      if (kw == TokenType::KeywordKey) {
+        ec.kind = EventKind::Key;
+        if (match(TokenType::LParen)) {
+          consume(TokenType::Number, "expected key number");
+          ec.source = static_cast<int>(tokens_[current_ - 1].number);
+          consume(TokenType::RParen, "expected ')' after key number");
+        }
+      } else if (kw == TokenType::KeywordTimer) {
+        ec.kind = EventKind::Timer;
+        if (match(TokenType::LParen)) {
+          consume(TokenType::Number, "expected timer interval");
+          ec.source = static_cast<int>(tokens_[current_ - 1].number);
+          consume(TokenType::RParen, "expected ')' after timer interval");
+        }
+      } else if (kw == TokenType::KeywordPlay) {
+        ec.kind = EventKind::Play;
+      } else if (kw == TokenType::KeywordCom) {
+        ec.kind = EventKind::Com;
+      } else if (kw == TokenType::KeywordPen) {
+        ec.kind = EventKind::Pen;
+      } else {
+        ec.kind = EventKind::Strig;
+      }
+      if (match(TokenType::KeywordOn)) {
+        ec.action = 0;
+      } else if (match(TokenType::KeywordOff)) {
+        ec.action = 1;
+      } else if (match(TokenType::KeywordStop)) {
+        ec.action = 2;
+      } else {
+        error_at_current("expected ON, OFF or STOP");
+        return false;
+      }
+      stmt.data = std::move(ec);
     } else {
       error_at_current("unknown statement");
       return false;
@@ -566,6 +719,29 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     Token t = advance();
     auto e = std::make_unique<Expr>();
     e->data = StringExpr{t.lexeme};
+    return e;
+  }
+  if (match(TokenType::KeywordFn)) {
+    // FN name(arg, arg, ...)
+    consume(TokenType::Identifier, "expected function name after FN");
+    FnCallExpr call;
+    call.name = tokens_[current_ - 1].lexeme;
+    consume(TokenType::LParen, "expected '(' after function name");
+    if (!check(TokenType::RParen)) {
+      do {
+        auto a = parse_expression();
+        if (!a) return nullptr;
+        call.args.push_back(std::move(a));
+      } while (match(TokenType::Comma));
+    }
+    consume(TokenType::RParen, "expected ')' after function arguments");
+    auto e = std::make_unique<Expr>();
+    e->data = std::move(call);
+    return e;
+  }
+  if (match(TokenType::KeywordTimer)) {
+    auto e = std::make_unique<Expr>();
+    e->data = BuiltinExpr{"TIMER"};
     return e;
   }
   if (check(TokenType::Identifier)) {

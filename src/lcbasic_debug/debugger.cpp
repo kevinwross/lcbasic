@@ -41,6 +41,17 @@ const char* opcode_name(OpCode op) {
     case OpCode::Restore: return "RESTORE";
     case OpCode::SetOptionBase: return "OPTION";
     case OpCode::NextZone: return "ZONE";
+    case OpCode::DefType: return "DEFTYPE";
+    case OpCode::TimerFunc: return "TIMER";
+    case OpCode::ChDir: return "CHDIR";
+    case OpCode::MkDir: return "MKDIR";
+    case OpCode::RmDir: return "RMDIR";
+    case OpCode::KillFile: return "KILL";
+    case OpCode::NameFile: return "NAME";
+    case OpCode::Files: return "FILES";
+    case OpCode::Shell: return "SHELL";
+    case OpCode::OnEvent: return "ONEVENT";
+    case OpCode::EventControl: return "EVCTL";
     case OpCode::Open: return "OPEN";
     case OpCode::Close: return "CLOSE";
     case OpCode::PrintFile: return "PRINT#";
@@ -135,6 +146,14 @@ Value eval_expr(EvalContext& ctx, const Expr& expr) {
         } else if constexpr (std::is_same_v<T, ArrayRefExpr>) {
           ctx.ok = false;
           ctx.error = "array references not supported in evaluation";
+          return Value{};
+        } else if constexpr (std::is_same_v<T, FnCallExpr>) {
+          ctx.ok = false;
+          ctx.error = "FN functions not supported in evaluation";
+          return Value{};
+        } else if constexpr (std::is_same_v<T, BuiltinExpr>) {
+          ctx.ok = false;
+          ctx.error = "builtin not supported in evaluation";
           return Value{};
         }
       },

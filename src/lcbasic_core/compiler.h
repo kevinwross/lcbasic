@@ -39,6 +39,17 @@ enum class OpCode : std::uint8_t {
   Eof,          // push EOF(filenum)
   OnError,      // ON ERROR GOTO line
   Resume,       // RESUME [NEXT | line]
+  DefType,      // DEFINT/DEFSNG/DEFDBL/DEFSTR for a letter range
+  TimerFunc,    // push the host timer value
+  ChDir,        // CHDIR path
+  MkDir,        // MKDIR path
+  RmDir,        // RMDIR path
+  KillFile,     // KILL path
+  NameFile,     // NAME old AS new
+  Files,        // FILES [pattern]
+  Shell,        // SHELL [command]
+  OnEvent,      // ON <event> GOSUB line
+  EventControl, // <event> ON/OFF/STOP
   Halt,         // stop execution
 };
 
@@ -92,6 +103,16 @@ private:
   std::vector<std::string> variable_names_;
   std::vector<Value> data_values_;
   std::int32_t option_base_ = 0;
+
+  // DEF FN definitions: name -> compiled subroutine + parameter slots.
+  struct FnDef {
+    std::vector<std::uint8_t> param_vars;
+    std::uint8_t return_var = 0;
+    std::size_t body_pc = 0;
+  };
+  std::unordered_map<std::string, FnDef> functions_;
+  // Active parameter renames while compiling a DEF FN body.
+  std::unordered_map<std::string, std::string> rename_;
 
   std::size_t next_pc() const { return code_.size(); }
 
