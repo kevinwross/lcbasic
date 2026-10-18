@@ -24,6 +24,8 @@ void StdoutScreen::putc(char ch) {
   if (ch == '\n') {
     row_++;
     col_ = 1;
+  } else if (ch == '\r') {
+    col_ = 1;
   } else {
     col_++;
     if (col_ > cols_) {

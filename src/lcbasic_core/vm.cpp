@@ -350,9 +350,9 @@ Value Vm::call_builtin(Builtin b, const std::vector<Value>& args,
     case Builtin::Fre:
       return Value(65536.0);
     case Builtin::Pos:
-      return Value(static_cast<double>(screen_.column() - 1));
+      return Value(static_cast<double>(screen_.column()));
     case Builtin::Csrlin:
-      return Value(static_cast<double>(screen_.row() - 1));
+      return Value(static_cast<double>(screen_.row()));
     case Builtin::Inkey: {
       auto k = screen_.get_key(false);
       if (!k) return Value(std::string(""));

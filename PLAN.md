@@ -157,6 +157,11 @@ Notes:
 - The screen is flushed at line boundaries so interactive `INKEY$` loops
   display their output. `INKEY$` maps Enter to CR (13), backspace to 8,
   and arrow keys to 130 (up) / 136 (down) / 139 (left) / 140 (right).
+- Screens handle `\n`/`\r` explicitly: ncurses' `waddch('\n')` clears the rest
+  of the line, which used to erase text drawn to the right (e.g. form
+  fields). Newlines now just advance to the next row.
+- `LINE INPUT #` strips the CR from CRLF text files, and `POS`/`CSRLIN`
+  are 1-based like GW-BASIC.
 - Random-access files: `OPEN ... FOR RANDOM [LEN=]`, `FIELD`, `LSET`/`RSET`,
   `GET`/`PUT`, `CLOSE`.
 - Built-in functions: numeric (`ABS`…`CDBL`, `RND`), string (`LEN`…`OCT$`),

@@ -101,6 +101,8 @@ std::string RealHost::file_read_line(int handle) {
   if (handle < 0 || handle >= static_cast<int>(files_.size())) return "";
   std::string line;
   std::getline(files_[handle].fs, line);
+  // Strip the CR from CRLF text files (DOS/Windows), as GW-BASIC does.
+  if (!line.empty() && line.back() == '\r') line.pop_back();
   return line;
 }
 

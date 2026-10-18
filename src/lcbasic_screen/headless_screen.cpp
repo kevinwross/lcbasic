@@ -20,7 +20,29 @@ void HeadlessScreen::color(int foreground, int background) {
   bg_ = background;
 }
 
+void HeadlessScreen::newline() {
+  if (row_ >= rows_) {
+    // Scroll the grid up by one line (mimics a terminal at the bottom).
+    std::copy(grid_.begin() + cols_, grid_.end(), grid_.begin());
+    std::fill(grid_.end() - cols_, grid_.end(), Cell{});
+    row_ = rows_;
+  } else {
+    ++row_;
+  }
+  col_ = 1;
+}
+
 void HeadlessScreen::putc(char ch) {
+  if (ch == '\n') {
+    output_ += ch;
+    newline();
+    return;
+  }
+  if (ch == '\r') {
+    output_ += ch;
+    col_ = 1;
+    return;
+  }
   if (row_ < 1 || row_ > rows_ || col_ < 1 || col_ > cols_) return;
   std::size_t idx = static_cast<std::size_t>((row_ - 1) * cols_ + (col_ - 1));
   grid_[idx].ch = ch;

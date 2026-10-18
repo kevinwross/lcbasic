@@ -36,10 +36,32 @@ void AnsiScreen::color(int foreground, int background) {
   attron(COLOR_PAIR(1));
 }
 
-void AnsiScreen::putc(char ch) { waddch(window_, ch); }
+void AnsiScreen::newline() {
+  // Do this ourselves: waddch('\n') clears the rest of the current line in
+  // ncurses, which erases text that programs have already placed there.
+  int y = getcury(window_);
+  if (y >= rows_ - 1) {
+    scroll(window_);
+    wmove(window_, rows_ - 1, 0);
+  } else {
+    wmove(window_, y + 1, 0);
+  }
+}
+
+void AnsiScreen::putc(char ch) {
+  if (ch == '\n') {
+    newline();
+    return;
+  }
+  if (ch == '\r') {
+    wmove(window_, getcury(window_), 0);
+    return;
+  }
+  waddch(window_, ch);
+}
 
 void AnsiScreen::print(const std::string& text) {
-  waddnstr(window_, text.c_str(), static_cast<int>(text.size()));
+  for (char ch : text) putc(ch);
 }
 
 void AnsiScreen::refresh() { wrefresh(window_); }

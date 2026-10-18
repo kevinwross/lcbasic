@@ -493,6 +493,41 @@ TEST(ext_eof_builtin) {
   CHECK(r.output == "one\ntwo\n");
 }
 
+TEST(ext_file_line_strips_cr) {
+  std::string path = "/tmp/lcbasic_crlf_test.txt";
+  {
+    std::ofstream f(path, std::ios::binary);
+    f << "hello\r\nworld\r\n";
+  }
+  auto r = e2e::run(
+      "10 OPEN \"" + path + "\" FOR INPUT AS #1\n"
+      "20 IF EOF(1) THEN 60\n"
+      "30 LINE INPUT #1, L$\n"
+      "40 PRINT LEN(L$)\n"
+      "45 PRINT L$\n"
+      "50 GOTO 20\n"
+      "60 CLOSE #1\n"
+      "70 END");
+  std::remove(path.c_str());
+  REQUIRE(r.ran);
+  CHECK(r.output == " 5 \nhello\n 5 \nworld\n");
+}
+
+TEST(ext_newline_preserves_existing_text) {
+  // PRINT's trailing newline must move to the next row without clearing the
+  // rest of the line (ncurses' waddch('\n') does clear it otherwise).
+  HeadlessScreen screen(25, 80);
+  screen.locate(5, 1);
+  screen.print("ABCDEFGHIJ");
+  screen.locate(5, 2);
+  screen.print("X");
+  screen.print("\n");
+  std::istringstream iss(screen.grid_as_string());
+  std::string row;
+  for (int i = 0; i < 5; ++i) std::getline(iss, row);
+  CHECK(row.substr(0, 10) == "AXCDEFGHIJ");
+}
+
 TEST(ext_dos_path_separators) {
   std::string dir = "/tmp/lcbasic_path_test";
   std::filesystem::remove_all(dir);

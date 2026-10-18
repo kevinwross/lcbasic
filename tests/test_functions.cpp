@@ -135,8 +135,8 @@ TEST(fn_fre_pos_csrlin) {
   auto r = e2e::run(
       "10 PRINT POS(0)\n20 PRINT CSRLIN\n30 PRINT FRE(0) > 0\n40 END");
   REQUIRE(r.ran);
-  // POS/CSRLIN are 0 at the start; FRE(0) > 0 is -1.
-  CHECK(r.output == " 0 \n 0 \n-1 \n");
+  // POS/CSRLIN are 1-based (as in GW-BASIC); FRE(0) > 0 is -1.
+  CHECK(r.output == " 1 \n 2 \n-1 \n");
 }
 
 namespace {

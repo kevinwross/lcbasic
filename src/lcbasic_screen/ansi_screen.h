@@ -22,6 +22,8 @@ public:
   std::optional<int> get_key(bool blocking) override;
 
 private:
+  void newline();
+
   WINDOW* window_ = nullptr;
   int rows_ = 0;
   int cols_ = 0;

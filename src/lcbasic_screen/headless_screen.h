@@ -34,6 +34,8 @@ public:
   std::string last_output() const;
 
 private:
+  void newline();
+
   int rows_;
   int cols_;
   int row_ = 1;
