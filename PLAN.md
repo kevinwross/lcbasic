@@ -6,6 +6,10 @@ display abstraction designed to grow into a graphics engine later.
 
 Status legend: ✅ done · 🚧 in progress · ⏳ planned
 
+> **Resuming on a new machine?** Read [`HANDOFF.md`](HANDOFF.md) first: it has
+> the current state, build/test commands, known limitations, and the next
+> recommended task.
+
 ---
 
 ## Decisions (agreed)
