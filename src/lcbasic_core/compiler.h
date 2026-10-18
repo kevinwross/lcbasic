@@ -50,6 +50,14 @@ enum class OpCode : std::uint8_t {
   Shell,        // SHELL [command]
   OnEvent,      // ON <event> GOSUB line
   EventControl, // <event> ON/OFF/STOP
+  Input,        // INPUT vars (operand = count; stack: prompt, var indices)
+  Cls,          // clear screen
+  Locate,       // stack: row, col
+  Color,        // stack: fg, bg
+  Erase,        // operand = array variable index
+  Clear,        // clear variables/arrays/data/stacks
+  RaiseError,   // stack: error code
+  MidAssign,    // operand = target var index; stack: value, start, length
   Halt,         // stop execution
 };
 
@@ -113,6 +121,13 @@ private:
   std::unordered_map<std::string, FnDef> functions_;
   // Active parameter renames while compiling a DEF FN body.
   std::unordered_map<std::string, std::string> rename_;
+
+  // WHILE/WEND nesting.
+  struct WhileFrame {
+    std::size_t cond_pc;
+    std::size_t jmpfalse_idx;
+  };
+  std::vector<WhileFrame> while_stack_;
 
   std::size_t next_pc() const { return code_.size(); }
 

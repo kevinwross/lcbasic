@@ -101,7 +101,7 @@ std::optional<std::size_t> Vm::find_pc_for_line(std::int32_t line) const {
 [[noreturn]] void Vm::trap_error(int error_code, std::int32_t line) {
   err_code_ = error_code;
   erl_line_ = line;
-  if (error_handler_line_ >= 0 && !in_error_handler_) {
+  if (handler_pc_ > 0 && !in_error_handler_) {
     in_error_handler_ = true;
     throw std::runtime_error("__error_trap__");
   }
@@ -682,8 +682,15 @@ ExecStatus Vm::execute(bool single_step) {
           break;
         }
         case OpCode::OnError: {
-          handler_pc_ = inst.operand;
-          error_handler_line_ = current_line;
+          if (inst.operand == 0) {
+            // ON ERROR GOTO 0: disable the handler.
+            handler_pc_ = 0;
+            error_handler_line_ = -1;
+            in_error_handler_ = false;
+          } else {
+            handler_pc_ = inst.operand;
+            error_handler_line_ = current_line;
+          }
           break;
         }
         case OpCode::Resume: {
@@ -698,6 +705,133 @@ ExecStatus Vm::execute(bool single_step) {
             auto pc = find_pc_for_line(erl_line_);
             if (pc) ip_ = *pc;
           }
+          break;
+        }
+        case OpCode::Input: {
+          int count = static_cast<int>(inst.operand & 0xFF);
+          bool line_input = (inst.operand & 0x100) != 0;
+          std::vector<std::uint8_t> vars(count);
+          for (int i = count - 1; i >= 0; --i) {
+            vars[i] = static_cast<std::uint8_t>(pop().as_double());
+          }
+          std::string prompt = pop().as_string();
+          if (!prompt.empty()) {
+            screen_.print(prompt);
+          } else if (!line_input) {
+            screen_.print("? ");
+          }
+          screen_.refresh();
+          std::string line = host_.input_line();
+
+          std::vector<std::string> items;
+          if (line_input) {
+            items.push_back(line);
+          } else {
+            std::string cur;
+            for (char c : line) {
+              if (c == ',') {
+                items.push_back(cur);
+                cur.clear();
+              } else {
+                cur += c;
+              }
+            }
+            items.push_back(cur);
+          }
+
+          auto trim = [](std::string s) {
+            std::size_t a = s.find_first_not_of(" \t");
+            if (a == std::string::npos) return std::string();
+            std::size_t b = s.find_last_not_of(" \t");
+            return s.substr(a, b - a + 1);
+          };
+
+          for (int i = 0; i < count; i++) {
+            std::string item =
+                (i < static_cast<int>(items.size())) ? items[i] : "";
+            item = trim(item);
+            std::uint8_t vidx = vars[i];
+            Value incoming;
+            if (var_type(vidx) == VarType::VT_STR) {
+              if (item.size() >= 2 && item.front() == '"' &&
+                  item.back() == '"') {
+                item = item.substr(1, item.size() - 2);
+              }
+              incoming = Value(item);
+            } else {
+              try {
+                incoming = Value(std::stod(item));
+              } catch (...) {
+                trap_error(13, current_line);  // Type mismatch
+                break;
+              }
+            }
+            var_values_[vidx] =
+                coerce_value(incoming, var_type(vidx), current_line);
+            var_init_[vidx] = true;
+          }
+          break;
+        }
+        case OpCode::Cls: {
+          screen_.clear();
+          break;
+        }
+        case OpCode::Locate: {
+          int row = static_cast<int>(std::round(pop().as_double()));
+          int col = static_cast<int>(std::round(pop().as_double()));
+          screen_.locate(row, col);
+          break;
+        }
+        case OpCode::Color: {
+          int fg = static_cast<int>(std::round(pop().as_double()));
+          int bg = static_cast<int>(std::round(pop().as_double()));
+          screen_.color(fg, bg);
+          break;
+        }
+        case OpCode::Erase: {
+          arrays_.erase(var_name(static_cast<std::uint8_t>(inst.operand)));
+          break;
+        }
+        case OpCode::Clear: {
+          for (std::size_t i = 0; i < var_values_.size(); i++) {
+            var_values_[i] = default_value(var_type(
+                static_cast<std::uint8_t>(i)));
+            var_init_[i] = false;
+          }
+          arrays_.clear();
+          data_pool_ = DataPool{};
+          for_stack_.clear();
+          break;
+        }
+        case OpCode::RaiseError: {
+          int code = static_cast<int>(std::round(pop().as_double()));
+          trap_error(code, current_line);
+          break;
+        }
+        case OpCode::MidAssign: {
+          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand);
+          double len_d = pop().as_double();
+          double start_d = pop().as_double();
+          Value val = pop();
+          if (var_type(vidx) != VarType::VT_STR) {
+            trap_error(13, current_line);  // Type mismatch
+            break;
+          }
+          std::string src = val.as_string();
+          std::string target =
+              (var_init_[vidx]) ? var_values_[vidx].as_string() : std::string();
+          int start = static_cast<int>(start_d);
+          int len = (len_d < 0.0) ? static_cast<int>(src.size())
+                                  : static_cast<int>(len_d);
+          if (start < 1) start = 1;
+          for (int i = 0; i < len && i < static_cast<int>(src.size()); i++) {
+            int pos = start - 1 + i;
+            if (pos >= 0 && pos < static_cast<int>(target.size())) {
+              target[pos] = src[i];
+            }
+          }
+          var_values_[vidx] = Value(target);
+          var_init_[vidx] = true;
           break;
         }
         case OpCode::Halt: {

@@ -52,6 +52,14 @@ const char* opcode_name(OpCode op) {
     case OpCode::Shell: return "SHELL";
     case OpCode::OnEvent: return "ONEVENT";
     case OpCode::EventControl: return "EVCTL";
+    case OpCode::Input: return "INPUT";
+    case OpCode::Cls: return "CLS";
+    case OpCode::Locate: return "LOCATE";
+    case OpCode::Color: return "COLOR";
+    case OpCode::Erase: return "ERASE";
+    case OpCode::Clear: return "CLEAR";
+    case OpCode::RaiseError: return "ERROR";
+    case OpCode::MidAssign: return "MIDASSIGN";
     case OpCode::Open: return "OPEN";
     case OpCode::Close: return "CLOSE";
     case OpCode::PrintFile: return "PRINT#";

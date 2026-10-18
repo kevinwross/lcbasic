@@ -162,6 +162,58 @@ struct EventControlStmt {
   int action = 0;  // 0 = ON, 1 = OFF, 2 = STOP
 };
 
+// Keyboard input: INPUT [prompt;] var[, var...] / LINE INPUT [prompt;] var$
+struct InputStmt {
+  std::unique_ptr<Expr> prompt;   // may be null
+  std::vector<std::string> vars;  // scalar variables
+  bool line_input = false;
+};
+
+// WHILE expr ... WEND
+struct WhileStmt { std::unique_ptr<Expr> condition; };
+struct WendStmt {};
+
+// ON expr GOTO line[, line...] / ON expr GOSUB line[, line...]
+struct OnGotoStmt {
+  std::unique_ptr<Expr> selector;
+  std::vector<std::int32_t> targets;
+  bool gosub = false;
+};
+
+// Screen operations.
+struct ClsStmt {};
+struct LocateStmt {
+  std::unique_ptr<Expr> row;
+  std::unique_ptr<Expr> col;
+};
+struct ColorStmt {
+  std::unique_ptr<Expr> fg;
+  std::unique_ptr<Expr> bg;  // may be null
+};
+struct ScreenStmt { std::unique_ptr<Expr> mode; };   // stubbed
+struct WidthStmt { std::unique_ptr<Expr> cols; };    // stubbed
+
+// SWAP a, b  (simple variables)
+struct SwapStmt {
+  std::string a;
+  std::string b;
+};
+
+struct EraseStmt { std::vector<std::string> names; };
+struct ClearStmt {};
+struct ErrorStmt { std::unique_ptr<Expr> code; };
+
+// MID$(target$, start[, length]) = value$
+struct MidAssignStmt {
+  std::string target;
+  std::unique_ptr<Expr> start;
+  std::unique_ptr<Expr> length;  // may be null
+  std::unique_ptr<Expr> value;
+};
+
+// A parsed-but-unimplemented statement (graphics/sound/etc.).
+struct StubStmt { std::string name; };
+
 struct Statement {
   std::int32_t line_number;
   std::variant<PrintStmt, LetStmt, GotoStmt, IfStmt, ForStmt, NextStmt,
@@ -170,7 +222,10 @@ struct Statement {
                OpenStmt, CloseStmt, PrintFileStmt, InputFileStmt,
                OnErrorStmt, ResumeStmt, DefTypeStmt, ChDirStmt, MkDirStmt,
                RmDirStmt, KillStmt, NameStmt, FilesStmt, ShellStmt,
-               OnEventStmt, EventControlStmt>
+               OnEventStmt, EventControlStmt, InputStmt, WhileStmt,
+               WendStmt, OnGotoStmt, ClsStmt, LocateStmt, ColorStmt,
+               ScreenStmt, WidthStmt, SwapStmt, EraseStmt, ClearStmt,
+               ErrorStmt, MidAssignStmt, StubStmt>
       data;
 };
 

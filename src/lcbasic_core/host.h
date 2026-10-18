@@ -25,6 +25,9 @@ public:
   virtual double timer() = 0;   // seconds since midnight (GW-BASIC TIMER)
   virtual double rnd(double seed) = 0;
 
+  // ----- Keyboard input -----
+  virtual std::string input_line() = 0;  // read one line from the user
+
   // ----- DOS / filesystem -----
   virtual bool dos_chdir(const std::string& path) = 0;
   virtual bool dos_mkdir(const std::string& path) = 0;
@@ -46,6 +49,7 @@ public:
 
   double timer() override;
   double rnd(double seed) override;
+  std::string input_line() override;
 
   bool dos_chdir(const std::string& path) override;
   bool dos_mkdir(const std::string& path) override;

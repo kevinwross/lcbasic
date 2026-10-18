@@ -338,8 +338,13 @@ void Compiler::compile_statement(const Statement& stmt) {
             emit(OpCode::InputFile, line, vidx);
           }
         } else if constexpr (std::is_same_v<T, OnErrorStmt>) {
-          emit(OpCode::OnError, line, 0);
-          record_fixup(code_.size() - 1, s.target_line);
+          if (s.target_line == 0) {
+            // ON ERROR GOTO 0 disables the handler.
+            emit(OpCode::OnError, line, 0);
+          } else {
+            emit(OpCode::OnError, line, 0);
+            record_fixup(code_.size() - 1, s.target_line);
+          }
         } else if constexpr (std::is_same_v<T, ResumeStmt>) {
           if (s.next) {
             emit(OpCode::Resume, line, 1); // operand=1 means NEXT
@@ -350,6 +355,109 @@ void Compiler::compile_statement(const Statement& stmt) {
             emit(OpCode::Resume, line, 0); // operand=0 means same line
             record_fixup(code_.size() - 1, line);
           }
+        } else if constexpr (std::is_same_v<T, InputStmt>) {
+          // Prompt (or empty string), then variable indices, then Input.
+          if (s.prompt) {
+            compile_expr(*s.prompt, line);
+          } else {
+            auto idx = add_constant(Value(std::string("")));
+            emit(OpCode::Constant, line, idx);
+          }
+          for (const auto& var : s.vars) {
+            auto idx = add_constant(
+                Value(static_cast<double>(variable_index(var))));
+            emit(OpCode::Constant, line, idx);
+          }
+          emit(OpCode::Input,
+               line,
+               static_cast<std::uint32_t>(s.vars.size()) |
+                   (s.line_input ? 0x100u : 0u));
+        } else if constexpr (std::is_same_v<T, WhileStmt>) {
+          std::size_t cond_pc = next_pc();
+          compile_expr(*s.condition, line);
+          emit(OpCode::JmpFalse, line, 0);
+          while_stack_.push_back(WhileFrame{cond_pc, code_.size() - 1});
+        } else if constexpr (std::is_same_v<T, WendStmt>) {
+          if (while_stack_.empty()) {
+            errors_.push_back("WEND without WHILE");
+          } else {
+            WhileFrame frame = while_stack_.back();
+            while_stack_.pop_back();
+            emit(OpCode::Jmp, line,
+                 static_cast<std::uint32_t>(frame.cond_pc));
+            code_[frame.jmpfalse_idx].operand =
+                static_cast<std::uint32_t>(next_pc());
+          }
+        } else if constexpr (std::is_same_v<T, OnGotoStmt>) {
+          std::string sel_var = std::string("\x01ON_SEL");
+          compile_expr(*s.selector, line);
+          std::uint8_t sel_idx = variable_index(sel_var);
+          emit(OpCode::StoreVar, line, sel_idx);
+          for (std::size_t i = 0; i < s.targets.size(); i++) {
+            emit(OpCode::LoadVar, line, sel_idx);
+            auto c = add_constant(Value(static_cast<double>(i + 1)));
+            emit(OpCode::Constant, line, c);
+            emit(OpCode::Eq, line);
+            emit(OpCode::JmpFalse, line, 0);
+            std::size_t skip_idx = code_.size() - 1;
+            emit(s.gosub ? OpCode::Call : OpCode::Jmp, line, 0);
+            record_fixup(code_.size() - 1, s.targets[i]);
+            code_[skip_idx].operand = static_cast<std::uint32_t>(next_pc());
+          }
+        } else if constexpr (std::is_same_v<T, ClsStmt>) {
+          emit(OpCode::Cls, line);
+        } else if constexpr (std::is_same_v<T, LocateStmt>) {
+          compile_expr(*s.col, line);
+          compile_expr(*s.row, line);
+          emit(OpCode::Locate, line);
+        } else if constexpr (std::is_same_v<T, ColorStmt>) {
+          if (s.bg) {
+            compile_expr(*s.bg, line);
+          } else {
+            auto c = add_constant(Value(0.0));
+            emit(OpCode::Constant, line, c);
+          }
+          compile_expr(*s.fg, line);
+          emit(OpCode::Color, line);
+        } else if constexpr (std::is_same_v<T, ScreenStmt>) {
+          // SCREEN is accepted but is a no-op in text mode.
+          compile_expr(*s.mode, line);
+          emit(OpCode::Pop, line);
+        } else if constexpr (std::is_same_v<T, WidthStmt>) {
+          compile_expr(*s.cols, line);
+          emit(OpCode::Pop, line);
+        } else if constexpr (std::is_same_v<T, SwapStmt>) {
+          std::string tmp = std::string("\x01SWAP_TMP");
+          std::uint8_t a = variable_index(s.a);
+          std::uint8_t b = variable_index(s.b);
+          std::uint8_t t = variable_index(tmp);
+          emit(OpCode::LoadVar, line, a);
+          emit(OpCode::StoreVar, line, t);
+          emit(OpCode::LoadVar, line, b);
+          emit(OpCode::StoreVar, line, a);
+          emit(OpCode::LoadVar, line, t);
+          emit(OpCode::StoreVar, line, b);
+        } else if constexpr (std::is_same_v<T, EraseStmt>) {
+          for (const auto& name : s.names) {
+            emit(OpCode::Erase, line, variable_index(name));
+          }
+        } else if constexpr (std::is_same_v<T, ClearStmt>) {
+          emit(OpCode::Clear, line);
+        } else if constexpr (std::is_same_v<T, ErrorStmt>) {
+          compile_expr(*s.code, line);
+          emit(OpCode::RaiseError, line);
+        } else if constexpr (std::is_same_v<T, MidAssignStmt>) {
+          compile_expr(*s.value, line);
+          compile_expr(*s.start, line);
+          if (s.length) {
+            compile_expr(*s.length, line);
+          } else {
+            auto c = add_constant(Value(-1.0));
+            emit(OpCode::Constant, line, c);
+          }
+          emit(OpCode::MidAssign, line, variable_index(s.target));
+        } else if constexpr (std::is_same_v<T, StubStmt>) {
+          // Parsed but unimplemented statement: no code emitted.
         }
       },
       stmt.data);

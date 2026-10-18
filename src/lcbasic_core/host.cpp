@@ -97,6 +97,13 @@ double RealHost::rnd(double /*seed*/) {
   return static_cast<double>(std::rand()) / RAND_MAX;
 }
 
+std::string RealHost::input_line() {
+  std::string line;
+  if (!std::getline(std::cin, line)) return "";
+  if (!line.empty() && line.back() == '\r') line.pop_back();
+  return line;
+}
+
 // ----- DOS / filesystem -----
 
 bool RealHost::dos_chdir(const std::string& path) {

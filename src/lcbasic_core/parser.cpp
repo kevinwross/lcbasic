@@ -352,23 +352,43 @@ bool Parser::parse_statement() {
            (tokens_[current_ - 1].type == TokenType::Comma ||
             tokens_[current_ - 1].type == TokenType::Semicolon));
       stmt.data = std::move(pfile);
-    } else if (match(TokenType::KeywordInput)) {
-      consume(TokenType::KeywordHash, "expected '#' after INPUT");
-      InputFileStmt ifile;
-      consume(TokenType::Number, "expected file number after '#'");
-      ifile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
-      if (match(TokenType::Comma)) {
-        // optional comma
-      }
-      do {
-        if (!check(TokenType::Identifier)) {
-          error_at_current("expected variable name after INPUT #");
-          return false;
+    } else if (check(TokenType::KeywordInput)) {
+      advance();  // consume INPUT
+      if (check(TokenType::KeywordHash)) {
+        // INPUT #filenum, var[, var...]
+        advance();  // consume '#'
+        InputFileStmt ifile;
+        consume(TokenType::Number, "expected file number after '#'");
+        ifile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+        if (match(TokenType::Comma)) {
+          // optional comma
         }
-        Token var_tok = advance();
-        ifile.vars.push_back(var_tok.lexeme);
-      } while (match(TokenType::Comma));
-      stmt.data = std::move(ifile);
+        do {
+          if (!check(TokenType::Identifier)) {
+            error_at_current("expected variable name after INPUT #");
+            return false;
+          }
+          Token var_tok = advance();
+          ifile.vars.push_back(var_tok.lexeme);
+        } while (match(TokenType::Comma));
+        stmt.data = std::move(ifile);
+      } else {
+        // INPUT [prompt;] var[, var...]
+        InputStmt in;
+        if (check(TokenType::String)) {
+          in.prompt = parse_expression();
+          if (!in.prompt) return false;
+          if (!match(TokenType::Semicolon) && !match(TokenType::Comma)) {
+            error_at_current("expected ';' or ',' after INPUT prompt");
+            return false;
+          }
+        }
+        do {
+          consume(TokenType::Identifier, "expected variable name after INPUT");
+          in.vars.push_back(tokens_[current_ - 1].lexeme);
+        } while (match(TokenType::Comma));
+        stmt.data = std::move(in);
+      }
     } else if (match(TokenType::KeywordOn)) {
       if (match(TokenType::KeywordError)) {
         consume(TokenType::KeywordGoto, "expected GOTO after ON ERROR");
@@ -377,7 +397,12 @@ bool Parser::parse_statement() {
         oerr.target_line =
             static_cast<std::int32_t>(tokens_[current_ - 1].number);
         stmt.data = std::move(oerr);
-      } else {
+      } else if (check(TokenType::KeywordKey) ||
+                 check(TokenType::KeywordTimer) ||
+                 check(TokenType::KeywordPlay) ||
+                 check(TokenType::KeywordCom) ||
+                 check(TokenType::KeywordPen) ||
+                 check(TokenType::KeywordStrig)) {
         // ON KEY(n) GOSUB line / ON TIMER(n) GOSUB line / ...
         OnEventStmt ev;
         if (match(TokenType::KeywordKey)) {
@@ -400,17 +425,33 @@ bool Parser::parse_statement() {
           ev.kind = EventKind::Com;
         } else if (match(TokenType::KeywordPen)) {
           ev.kind = EventKind::Pen;
-        } else if (match(TokenType::KeywordStrig)) {
-          ev.kind = EventKind::Strig;
         } else {
-          error_at_current("expected ERROR or an event after ON");
-          return false;
+          ev.kind = EventKind::Strig;
         }
         consume(TokenType::KeywordGosub, "expected GOSUB after ON event");
         consume(TokenType::Number, "expected line number after GOSUB");
         ev.target_line =
             static_cast<std::int32_t>(tokens_[current_ - 1].number);
         stmt.data = std::move(ev);
+      } else {
+        // ON expr GOTO/GOSUB line[, line...]
+        OnGotoStmt og;
+        og.selector = parse_expression();
+        if (!og.selector) return false;
+        if (match(TokenType::KeywordGoto)) {
+          og.gosub = false;
+        } else if (match(TokenType::KeywordGosub)) {
+          og.gosub = true;
+        } else {
+          error_at_current("expected GOTO or GOSUB after ON expression");
+          return false;
+        }
+        do {
+          consume(TokenType::Number, "expected line number");
+          og.targets.push_back(
+              static_cast<std::int32_t>(tokens_[current_ - 1].number));
+        } while (match(TokenType::Comma));
+        stmt.data = std::move(og);
       }
     } else if (match(TokenType::KeywordResume)) {
       ResumeStmt res;
@@ -535,6 +576,166 @@ bool Parser::parse_statement() {
         return false;
       }
       stmt.data = std::move(ec);
+    } else if (check(TokenType::KeywordLine)) {
+      std::size_t save = current_;
+      advance();  // LINE
+      if (match(TokenType::KeywordInput)) {
+        // LINE INPUT [prompt;] var$
+        InputStmt in;
+        in.line_input = true;
+        if (check(TokenType::String)) {
+          in.prompt = parse_expression();
+          if (!in.prompt) return false;
+          if (!match(TokenType::Semicolon) && !match(TokenType::Comma)) {
+            error_at_current("expected ';' or ',' after LINE INPUT prompt");
+            return false;
+          }
+        }
+        do {
+          consume(TokenType::Identifier,
+                  "expected variable after LINE INPUT");
+          in.vars.push_back(tokens_[current_ - 1].lexeme);
+        } while (match(TokenType::Comma));
+        stmt.data = std::move(in);
+      } else {
+        // Graphics LINE — parsed but not implemented.
+        current_ = save;
+        advance();
+        while (!is_at_end() && !check(TokenType::Newline) &&
+               !check(TokenType::Colon)) {
+          advance();
+        }
+        stmt.data = StubStmt{"LINE"};
+      }
+    } else if (match(TokenType::KeywordWhile)) {
+      WhileStmt w;
+      w.condition = parse_expression();
+      if (!w.condition) return false;
+      stmt.data = std::move(w);
+    } else if (match(TokenType::KeywordWend)) {
+      stmt.data = WendStmt{};
+    } else if (match(TokenType::KeywordSwap)) {
+      SwapStmt sw;
+      consume(TokenType::Identifier, "expected variable after SWAP");
+      sw.a = tokens_[current_ - 1].lexeme;
+      consume(TokenType::Comma, "expected ',' in SWAP");
+      consume(TokenType::Identifier, "expected variable after SWAP");
+      sw.b = tokens_[current_ - 1].lexeme;
+      stmt.data = std::move(sw);
+    } else if (match(TokenType::KeywordErase)) {
+      EraseStmt e;
+      do {
+        consume(TokenType::Identifier, "expected array name after ERASE");
+        e.names.push_back(tokens_[current_ - 1].lexeme);
+      } while (match(TokenType::Comma));
+      stmt.data = std::move(e);
+    } else if (match(TokenType::KeywordClear)) {
+      stmt.data = ClearStmt{};
+    } else if (match(TokenType::KeywordCls)) {
+      stmt.data = ClsStmt{};
+    } else if (match(TokenType::KeywordLocate)) {
+      LocateStmt l;
+      l.row = parse_expression();
+      if (!l.row) return false;
+      consume(TokenType::Comma, "expected ',' in LOCATE");
+      l.col = parse_expression();
+      if (!l.col) return false;
+      stmt.data = std::move(l);
+    } else if (match(TokenType::KeywordColor)) {
+      ColorStmt c;
+      c.fg = parse_expression();
+      if (!c.fg) return false;
+      if (match(TokenType::Comma)) {
+        c.bg = parse_expression();
+        if (!c.bg) return false;
+      }
+      stmt.data = std::move(c);
+    } else if (match(TokenType::KeywordScreen)) {
+      ScreenStmt s;
+      s.mode = parse_expression();
+      if (!s.mode) return false;
+      while (match(TokenType::Comma)) {
+        if (!parse_expression()) return false;
+      }
+      stmt.data = std::move(s);
+    } else if (match(TokenType::KeywordWidth)) {
+      WidthStmt w;
+      w.cols = parse_expression();
+      if (!w.cols) return false;
+      stmt.data = std::move(w);
+    } else if (match(TokenType::KeywordError)) {
+      ErrorStmt e;
+      e.code = parse_expression();
+      if (!e.code) return false;
+      stmt.data = std::move(e);
+    } else if (match(TokenType::KeywordMid)) {
+      consume(TokenType::LParen, "expected '(' after MID$");
+      consume(TokenType::Identifier, "expected string variable");
+      MidAssignStmt m;
+      m.target = tokens_[current_ - 1].lexeme;
+      consume(TokenType::Comma, "expected ',' after MID$ target");
+      m.start = parse_expression();
+      if (!m.start) return false;
+      if (match(TokenType::Comma)) {
+        m.length = parse_expression();
+        if (!m.length) return false;
+      }
+      consume(TokenType::RParen, "expected ')' after MID$ arguments");
+      consume(TokenType::Eq, "expected '=' in MID$ assignment");
+      m.value = parse_expression();
+      if (!m.value) return false;
+      stmt.data = std::move(m);
+    } else if (match(TokenType::KeywordLprint)) {
+      // LPRINT behaves like PRINT (mapped to the screen for now).
+      PrintStmt print;
+      while (!is_at_end() && !check(TokenType::Newline) &&
+             !check(TokenType::Colon)) {
+        auto expr = parse_expression();
+        if (!expr) return false;
+        print.args.push_back(std::move(expr));
+        if (check(TokenType::Comma) || check(TokenType::Semicolon)) {
+          print.separators.push_back(peek().type);
+          advance();
+          if (is_at_end() || check(TokenType::Newline) ||
+              check(TokenType::Colon)) {
+            break;
+          }
+        } else {
+          print.separators.push_back(TokenType::Eof);
+          break;
+        }
+      }
+      print.trailing_separator =
+          (!print.separators.empty() &&
+           print.separators.back() != TokenType::Eof);
+      stmt.data = std::move(print);
+    } else if (check(TokenType::KeywordTron) ||
+               check(TokenType::KeywordTroff) ||
+               check(TokenType::KeywordCont) ||
+               check(TokenType::KeywordMerge) ||
+               check(TokenType::KeywordField) ||
+               check(TokenType::KeywordGet) ||
+               check(TokenType::KeywordPut) ||
+               check(TokenType::KeywordLset) ||
+               check(TokenType::KeywordRset) ||
+               check(TokenType::KeywordPset) ||
+               check(TokenType::KeywordPreset) ||
+               check(TokenType::KeywordCircle) ||
+               check(TokenType::KeywordPaint) ||
+               check(TokenType::KeywordDraw) ||
+               check(TokenType::KeywordSound) ||
+               check(TokenType::KeywordBeep) ||
+               check(TokenType::KeywordPalette) ||
+               check(TokenType::KeywordWindow) ||
+               check(TokenType::KeywordView)) {
+      // Parsed but not implemented (graphics / sound / random files /
+      // tracing). Consume the rest of the statement and emit nothing.
+      std::string name = peek().lexeme;
+      while (!is_at_end() && !check(TokenType::Newline) &&
+             !check(TokenType::Colon)) {
+        advance();
+      }
+      stmt.data = StubStmt{name};
     } else {
       error_at_current("unknown statement");
       return false;
