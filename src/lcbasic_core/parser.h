@@ -85,11 +85,12 @@ struct ReturnStmt {};
 struct EndStmt {};
 struct StopStmt {};
 
-struct DimStmt {
+struct DimEntry {
   std::string name;
   VarType type = VarType::VT_DBL;
   std::vector<std::unique_ptr<Expr>> upper_bounds;  // expressions
 };
+struct DimStmt { std::vector<DimEntry> arrays; };
 
 struct OptionBaseStmt { std::int32_t base; };
 

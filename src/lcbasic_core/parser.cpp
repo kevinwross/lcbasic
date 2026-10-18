@@ -249,18 +249,23 @@ bool Parser::parse_statement() {
       }
       break;
     } else if (match(TokenType::KeywordDim)) {
+      // DIM supports a comma-separated list of arrays:
+      //   DIM G(8,8), C(9,2), N(3)
       DimStmt dim;
-      consume(TokenType::Identifier, "expected array name after DIM");
-      dim.name = tokens_[current_ - 1].lexeme;
-      // Check for type suffix
-      dim.type = deduce_var_type(dim.name);
-      consume(TokenType::LParen, "expected '(' after array name");
       do {
-        auto ub = parse_expression();
-        if (!ub) return false;
-        dim.upper_bounds.push_back(std::move(ub));
+        DimEntry entry;
+        consume(TokenType::Identifier, "expected array name after DIM");
+        entry.name = tokens_[current_ - 1].lexeme;
+        entry.type = deduce_var_type(entry.name);
+        consume(TokenType::LParen, "expected '(' after array name");
+        do {
+          auto ub = parse_expression();
+          if (!ub) return false;
+          entry.upper_bounds.push_back(std::move(ub));
+        } while (match(TokenType::Comma));
+        consume(TokenType::RParen, "expected ')' after dimensions");
+        dim.arrays.push_back(std::move(entry));
       } while (match(TokenType::Comma));
-      consume(TokenType::RParen, "expected ')' after dimensions");
       stmt.data = std::move(dim);
     } else if (match(TokenType::KeywordOption)) {
       consume(TokenType::KeywordBase, "expected BASE after OPTION");

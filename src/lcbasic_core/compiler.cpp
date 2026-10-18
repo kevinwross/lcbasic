@@ -184,16 +184,18 @@ void Compiler::compile_statement(const Statement& stmt) {
         } else if constexpr (std::is_same_v<T, StopStmt>) {
           emit(OpCode::Stop, line);
         } else if constexpr (std::is_same_v<T, DimStmt>) {
-          // Evaluate each upper bound expression onto the stack.
-          for (auto& ub : s.upper_bounds) {
-            compile_expr(*ub, line);
+          // DIM may declare several arrays in one statement.
+          for (const auto& entry : s.arrays) {
+            for (const auto& ub : entry.upper_bounds) {
+              compile_expr(*ub, line);
+            }
+            std::uint8_t vidx = variable_index(entry.name);
+            std::uint8_t num_dims =
+                static_cast<std::uint8_t>(entry.upper_bounds.size());
+            std::uint32_t operand =
+                (static_cast<std::uint32_t>(num_dims) << 8) | vidx;
+            emit(OpCode::Dim, line, operand);
           }
-          std::uint8_t vidx = variable_index(s.name);
-          std::uint8_t num_dims =
-              static_cast<std::uint8_t>(s.upper_bounds.size());
-          std::uint32_t operand =
-              (static_cast<std::uint32_t>(num_dims) << 8) | vidx;
-          emit(OpCode::Dim, line, operand);
         } else if constexpr (std::is_same_v<T, OptionBaseStmt>) {
           emit(OpCode::SetOptionBase, line,
                static_cast<std::uint32_t>(s.base));

@@ -109,6 +109,17 @@ TEST(ext_dim_redefinition_errors) {
   CHECK(r.error.find("error 10") != std::string::npos);
 }
 
+TEST(ext_dim_multiple_arrays) {
+  // A single DIM statement declaring many arrays (including multi-dimensional
+  // ones), as used by real GW-BASIC programs.
+  auto r = e2e::run(
+      "330 DIM G(8,8),C(9,2),K(3,3),N(3),Z(8,8),D(8),EORD(8)\n"
+      "340 G(1,1) = 5\n350 C(9,2) = 7\n360 N(3) = 9\n"
+      "370 PRINT G(1,1); C(9,2); N(3)\n380 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == " 5  7  9 \n");
+}
+
 TEST(ext_data_unquoted_strings) {
   auto r = e2e::run(
       "10 DATA HELLO,WORLD\n20 READ A$,B$\n30 PRINT A$;B$\n40 END");
