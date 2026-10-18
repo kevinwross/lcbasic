@@ -98,6 +98,8 @@ enum class TokenType {
   KeywordView,
   KeywordRandom,
   KeywordBinary,
+  KeywordRandomize,
+  KeywordWrite,
 
   // Punctuation
   Newline,
@@ -124,6 +126,10 @@ enum class TokenType {
   Xor,
   Eqv,
   Imp,
+  Caret,       // ^
+  Backslash,   // integer division
+  Mod,         // MOD
+  Question,    // ? (PRINT shorthand)
 
   Eof,
   Error,

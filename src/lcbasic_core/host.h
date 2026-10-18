@@ -25,6 +25,10 @@ public:
   // ----- Clock / randomness -----
   virtual double timer() = 0;   // seconds since midnight (GW-BASIC TIMER)
   virtual double rnd(double seed) = 0;
+  virtual void randomize(double seed) = 0;  // seed the RND generator
+  virtual std::string date_string() = 0;     // MM-DD-YYYY
+  virtual std::string time_string() = 0;     // HH:MM:SS
+  virtual std::string file_read_chars(int handle, int n) = 0;
 
   // ----- Keyboard input -----
   virtual std::string input_line() = 0;  // read one line from the user
@@ -57,6 +61,10 @@ public:
 
   double timer() override;
   double rnd(double seed) override;
+  void randomize(double seed) override;
+  std::string date_string() override;
+  std::string time_string() override;
+  std::string file_read_chars(int handle, int n) override;
   std::string input_line() override;
 
   bool dos_chdir(const std::string& path) override;

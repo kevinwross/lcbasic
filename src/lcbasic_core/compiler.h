@@ -17,6 +17,9 @@ enum class OpCode : std::uint8_t {
   Add, Sub, Mul, Div,
   Eq, Ne, Lt, Le, Gt, Ge,
   And, Or, Not, Xor, Eqv, Imp,  // bitwise/logical (16-bit)
+  Pow,                          // ^
+  IntDiv,                       // integer division
+  Mod,                          // MOD
   Print,        // pop and print
   Pop,          // discard top of stack
   Jmp,          // jump to PC offset stored in operand
@@ -65,7 +68,21 @@ enum class OpCode : std::uint8_t {
   LSet,         // operand = (var index << 1) | right_justify; stack: value
   GetRecord,    // operand = filenum; stack: record number
   PutRecord,    // operand = filenum; stack: record number
+  RestoreIndex, // operand = DATA pool index
+  Randomize,    // stack: seed
+  WriteFile,    // operand = filenum; stack: values (count encoded)
+  FnBind,       // operand = function id; bind args and call body
+  FnRet,        // return from a DEF FN body, restoring parameters
+  StoreTemp,    // operand = temp slot; pop value into an untyped temp
+  LoadTemp,     // operand = temp slot; push value from an untyped temp
+  Stop,         // STOP: pause with "Break in line N" (resumable)
   Halt,         // stop execution
+};
+
+// A compiled DEF FN descriptor (for recursion-safe calls).
+struct FnDesc {
+  std::vector<std::uint8_t> param_vars;
+  std::size_t body_pc = 0;
 };
 
 struct Instruction {
@@ -103,6 +120,7 @@ public:
   }
 
   const std::vector<Value>& data_values() const { return data_values_; }
+  const std::vector<FnDesc>& fn_descs() const { return fn_descs_; }
 
   std::optional<std::size_t> find_line(std::int32_t line) const;
 
@@ -119,15 +137,14 @@ private:
   std::vector<Value> data_values_;
   std::int32_t option_base_ = 0;
 
-  // DEF FN definitions: name -> compiled subroutine + parameter slots.
-  struct FnDef {
-    std::vector<std::uint8_t> param_vars;
-    std::uint8_t return_var = 0;
-    std::size_t body_pc = 0;
-  };
-  std::unordered_map<std::string, FnDef> functions_;
+  // DEF FN definitions: name -> index into fn_descs_.
+  std::unordered_map<std::string, int> functions_;
+  std::vector<FnDesc> fn_descs_;
   // Active parameter renames while compiling a DEF FN body.
   std::unordered_map<std::string, std::string> rename_;
+
+  // Line number -> DATA pool index (for RESTORE line).
+  std::vector<std::pair<std::int32_t, std::size_t>> data_line_index_;
 
   // WHILE/WEND nesting.
   struct WhileFrame {
@@ -140,6 +157,7 @@ private:
 
   std::uint8_t add_constant(const Value& v);
   std::uint8_t variable_index(const std::string& name);
+  std::size_t data_index_for_line(std::int32_t line) const;
   void emit(OpCode op, std::int32_t line, std::uint32_t operand = 0);
   void record_fixup(std::size_t code_index, std::int32_t target_line);
   void resolve_fixups();

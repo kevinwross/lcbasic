@@ -9,6 +9,7 @@ add_executable(lcbasic_tests
   test_statements.cpp
   test_functions.cpp
   test_operators.cpp
+  test_extensions.cpp
 )
 
 if(HAVE_CURSES)

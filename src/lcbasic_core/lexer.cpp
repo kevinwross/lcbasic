@@ -91,6 +91,9 @@ const std::unordered_map<std::string_view, TokenType> kKeywords = {
     {"VIEW", TokenType::KeywordView},
     {"RANDOM", TokenType::KeywordRandom},
     {"BINARY", TokenType::KeywordBinary},
+    {"RANDOMIZE", TokenType::KeywordRandomize},
+    {"WRITE", TokenType::KeywordWrite},
+    {"MOD", TokenType::Mod},
     {"AND", TokenType::And},
     {"OR", TokenType::Or},
     {"NOT", TokenType::Not},
@@ -211,6 +214,11 @@ Token Lexer::scan_identifier_or_keyword() {
   }
 
   std::string lexeme = source_.substr(start_, current_ - start_);
+  // GW-BASIC keywords and variable names are case-insensitive: normalise
+  // identifiers to upper case so `A` and `a` are the same variable.
+  for (char& c : lexeme) {
+    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  }
   TokenType type = keyword(lexeme);
 
   return Token{type, lexeme, 0.0, line_number_, static_cast<std::int32_t>(start_)};
@@ -251,6 +259,15 @@ Token Lexer::scan_token() {
     case '-': return make_token(TokenType::Minus, "-");
     case '*': return make_token(TokenType::Star, "*");
     case '/': return make_token(TokenType::Slash, "/");
+    case '^': return make_token(TokenType::Caret, "^");
+    case '\\': return make_token(TokenType::Backslash, "\\");
+    case '?': return make_token(TokenType::Question, "?");
+    case '\'': {
+      // Apostrophe comment: consume the rest of the line. Emit a REM token
+      // so the parser skips it like REM.
+      while (!is_at_end()) advance();
+      return make_token(TokenType::KeywordRem, "'");
+    }
     case '#': return make_token(TokenType::KeywordHash, "#");
     case '=': return make_token(TokenType::Eq, "=");
     case '<':

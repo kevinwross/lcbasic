@@ -260,6 +260,35 @@ Value Vm::call_builtin(Builtin b, const std::vector<Value>& args,
       return Value(static_cast<double>(screen_.column() - 1));
     case Builtin::Csrlin:
       return Value(static_cast<double>(screen_.row() - 1));
+    case Builtin::Inkey: {
+      auto k = screen_.get_key(false);
+      if (!k) return Value(std::string(""));
+      return Value(std::string(1, static_cast<char>(*k)));
+    }
+    case Builtin::Date:
+      return Value(host_.date_string());
+    case Builtin::Time:
+      return Value(host_.time_string());
+    case Builtin::InputDollar: {
+      int n = static_cast<int>(num(0));
+      if (n < 0) n = 0;
+      std::string out;
+      if (args.size() >= 2) {
+        int filenum = static_cast<int>(num(1));
+        if (filenum < 1 || filenum > 255 || file_handles_[filenum] < 0) {
+          trap_error(52, line);
+          return Value(std::string(""));
+        }
+        out = host_.file_read_chars(file_handles_[filenum], n);
+      } else {
+        for (int i = 0; i < n; i++) {
+          auto k = screen_.get_key(true);
+          if (!k) break;
+          out += static_cast<char>(*k);
+        }
+      }
+      return Value(out);
+    }
   }
   return Value{};
 }
@@ -299,18 +328,39 @@ std::optional<std::size_t> Vm::find_pc_for_line(std::int32_t line) const {
 }
 
 bool Vm::check_events() {
+  if (event_active_) return false;
+
+  // KEY: fire the enabled KEY handler if a key is waiting.
+  constexpr int kKey = static_cast<int>(EventKind::Key);
+  EventSlot& key = events_[kKey];
+  if (key.enabled && !key.stopped && key.handler_pc != 0) {
+    auto k = screen_.get_key(false);
+    if (k) {
+      key.in_handler = true;
+      event_active_ = true;
+      event_depth_ = call_stack_.size();
+      call_stack_.push_back(ip_);
+      ip_ = key.handler_pc;
+      return true;
+    }
+  }
+
+  // TIMER: fire when the interval has elapsed.
   constexpr int kTimer = static_cast<int>(EventKind::Timer);
   EventSlot& timer = events_[kTimer];
-  if (!timer.enabled || timer.stopped || timer.in_handler) return false;
-  if (timer.handler_pc == 0) return false;
-  double now = host_.timer();
-  if (now - timer.last_fire < timer.interval) return false;
-  timer.last_fire = now;
-  timer.in_handler = true;
-  event_depth_ = call_stack_.size();
-  call_stack_.push_back(ip_);
-  ip_ = timer.handler_pc;
-  return true;
+  if (timer.enabled && !timer.stopped && timer.handler_pc != 0) {
+    double now = host_.timer();
+    if (now - timer.last_fire >= timer.interval) {
+      timer.last_fire = now;
+      timer.in_handler = true;
+      event_active_ = true;
+      event_depth_ = call_stack_.size();
+      call_stack_.push_back(ip_);
+      ip_ = timer.handler_pc;
+      return true;
+    }
+  }
+  return false;
 }
 
 void Vm::load(const std::vector<Instruction>& code,
@@ -318,10 +368,15 @@ void Vm::load(const std::vector<Instruction>& code,
               const std::vector<LineEntry>& line_table,
               const std::unordered_map<std::string, std::uint8_t>& variable_table,
               const std::vector<std::string>& variable_names,
-              const std::vector<Value>& data_values) {
+              const std::vector<Value>& data_values,
+              const std::vector<FnDesc>& fn_descs) {
   code_ = code;
   constants_ = constants;
   line_table_ = line_table;
+  fn_descs_ = fn_descs;
+  temp_values_.assign(8, Value{});
+  fn_frames_.clear();
+  fn_return_.clear();
 
   std::uint8_t max_idx = 0;
   for (const auto& [name, idx] : variable_table) {
@@ -353,22 +408,27 @@ void Vm::load(const std::vector<Instruction>& code,
   letter_types_.fill(VarType::VT_DBL);
   for (auto& ev : events_) ev = EventSlot{};
   event_depth_ = 0;
+  event_active_ = false;
   last_line_ = -1;
+  stopped_ = false;
 }
 
 bool Vm::run() {
+  stopped_ = false;
   ExecStatus st = execute(false);
   return st == ExecStatus::Halted;
 }
 
 ExecStatus Vm::run_with_hook(DbgHook* hook) {
   hook_ = hook;
+  stopped_ = false;
   ExecStatus st = execute(false);
   hook_ = nullptr;
   return st;
 }
 
 ExecStatus Vm::step_one() {
+  stopped_ = false;
   return execute(true);
 }
 
@@ -592,11 +652,10 @@ ExecStatus Vm::execute(bool single_step) {
           }
           ip_ = call_stack_.back();
           call_stack_.pop_back();
-          // If we just returned from a timer event handler, clear its flag.
-          constexpr int kTimer = static_cast<int>(EventKind::Timer);
-          if (events_[kTimer].in_handler &&
-              call_stack_.size() <= event_depth_) {
-            events_[kTimer].in_handler = false;
+          // If we just returned from an event handler, clear the flags.
+          if (event_active_ && call_stack_.size() <= event_depth_) {
+            event_active_ = false;
+            for (auto& ev : events_) ev.in_handler = false;
           }
           break;
         }
@@ -650,8 +709,12 @@ ExecStatus Vm::execute(bool single_step) {
           for (double b : bounds_d) {
             upper_bounds.push_back(static_cast<std::int32_t>(b));
           }
-          arrays_.dim(var_name(vidx), option_base_, upper_bounds,
-                      var_type(vidx));
+          std::string dim_name = var_name(vidx);
+          if (arrays_.contains(dim_name)) {
+            trap_error(10, current_line);  // Duplicate definition
+            break;
+          }
+          arrays_.dim(dim_name, option_base_, upper_bounds, var_type(vidx));
           break;
         }
         case OpCode::ArrayLoad: {
@@ -885,6 +948,28 @@ ExecStatus Vm::execute(bool single_step) {
           break;
         }
         case OpCode::InputFile: {
+          int count = static_cast<int>(inst.operand & 0xFF);
+          bool line_input = (inst.operand & 0x100) != 0;
+
+          struct Target {
+            std::uint8_t vidx;
+            bool is_array;
+            std::vector<std::int32_t> indices;
+          };
+          std::vector<Target> targets(static_cast<std::size_t>(count));
+          for (int i = count - 1; i >= 0; --i) {
+            std::uint8_t vidx = static_cast<std::uint8_t>(pop().as_double());
+            int n = static_cast<int>(std::round(pop().as_double()));
+            std::vector<std::int32_t> indices;
+            for (int k = 0; k < n; k++) {
+              indices.push_back(
+                  static_cast<std::int32_t>(std::round(pop().as_double())));
+            }
+            std::reverse(indices.begin(), indices.end());
+            targets[static_cast<std::size_t>(i)] =
+                Target{vidx, n > 0, std::move(indices)};
+          }
+
           double fn_d = pop().as_double();
           int filenum = static_cast<int>(fn_d);
           if (filenum < 1 || filenum > 255 || file_handles_[filenum] < 0) {
@@ -892,28 +977,67 @@ ExecStatus Vm::execute(bool single_step) {
             break;
           }
           int handle = file_handles_[filenum];
-          std::string line_text = host_.file_read_line(handle);
-          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand);
-          if (vidx >= var_values_.size()) {
-            trap_error(5, current_line);
-            break;
-          }
-          // A string variable reads the whole line; a numeric variable
-          // parses a number from it.
-          Value incoming;
-          if (var_type(vidx) == VarType::VT_STR) {
-            incoming = Value(line_text);
+
+          std::vector<std::string> items;
+          if (line_input) {
+            items.push_back(host_.file_read_line(handle));
           } else {
-            try {
-              incoming = Value(std::stod(line_text));
-            } catch (...) {
-              trap_error(13, current_line);  // Type mismatch
-              break;
+            while (static_cast<int>(items.size()) < count) {
+              std::string line_text = host_.file_read_line(handle);
+              std::string cur;
+              for (char c : line_text) {
+                if (c == ',') {
+                  items.push_back(cur);
+                  cur.clear();
+                } else {
+                  cur += c;
+                }
+              }
+              items.push_back(cur);
+              if (line_text.empty()) break;  // EOF guard
             }
           }
-          var_values_[vidx] = coerce_value(incoming, var_type(vidx),
-                                           current_line);
-          var_init_[vidx] = true;
+
+          auto trim = [](std::string s) {
+            std::size_t a = s.find_first_not_of(" \t");
+            if (a == std::string::npos) return std::string();
+            std::size_t b = s.find_last_not_of(" \t");
+            return s.substr(a, b - a + 1);
+          };
+
+          for (int i = 0; i < count; i++) {
+            std::string item =
+                (i < static_cast<int>(items.size())) ? trim(items[i]) : "";
+            const Target& t = targets[static_cast<std::size_t>(i)];
+            VarType vt = t.is_array ? arrays_.type_of(var_name(t.vidx))
+                                    : var_type(t.vidx);
+            Value v;
+            if (vt == VarType::VT_STR) {
+              if (item.size() >= 2 && item.front() == '"' &&
+                  item.back() == '"') {
+                item = item.substr(1, item.size() - 2);
+              }
+              v = Value(item);
+            } else {
+              try {
+                v = Value(std::stod(item));
+              } catch (...) {
+                trap_error(13, current_line);  // Type mismatch
+                break;
+              }
+            }
+            if (t.is_array) {
+              try {
+                v = coerce_value(v, vt, current_line);
+                arrays_.at(var_name(t.vidx), t.indices) = v;
+              } catch (const std::out_of_range&) {
+                trap_error(9, current_line);
+              }
+            } else {
+              var_values_[t.vidx] = coerce_value(v, vt, current_line);
+              var_init_[t.vidx] = true;
+            }
+          }
           break;
         }
         case OpCode::Eof: {
@@ -955,6 +1079,7 @@ ExecStatus Vm::execute(bool single_step) {
         case OpCode::Input: {
           int count = static_cast<int>(inst.operand & 0xFF);
           bool line_input = (inst.operand & 0x100) != 0;
+          bool prompt_comma = (inst.operand & 0x200) != 0;
 
           struct Target {
             std::uint8_t vidx;
@@ -978,6 +1103,7 @@ ExecStatus Vm::execute(bool single_step) {
           std::string prompt = pop().as_string();
           if (!prompt.empty()) {
             screen_.print(prompt);
+            if (prompt_comma) screen_.print("? ");
           } else if (!line_input) {
             screen_.print("? ");
           }
@@ -1271,6 +1397,137 @@ ExecStatus Vm::execute(bool single_step) {
           host_.random_write(it->second.handle, rec, it->second.record_len,
                              it->second.buffer);
           break;
+        }
+        case OpCode::Pow: {
+          Value b = pop();
+          Value a = pop();
+          push(Value(std::pow(a.as_double(), b.as_double())));
+          break;
+        }
+        case OpCode::IntDiv: {
+          Value b = pop();
+          Value a = pop();
+          long y = static_cast<long>(std::round(b.as_double()));
+          if (y == 0) {
+            trap_error(11, current_line);  // Division by zero
+            break;
+          }
+          long x = static_cast<long>(std::round(a.as_double()));
+          push(Value(static_cast<double>(x / y)));
+          break;
+        }
+        case OpCode::Mod: {
+          Value b = pop();
+          Value a = pop();
+          long y = static_cast<long>(std::round(b.as_double()));
+          if (y == 0) {
+            trap_error(11, current_line);
+            break;
+          }
+          long x = static_cast<long>(std::round(a.as_double()));
+          push(Value(static_cast<double>(x % y)));
+          break;
+        }
+        case OpCode::RestoreIndex: {
+          data_pool_.restore_to(inst.operand);
+          break;
+        }
+        case OpCode::Randomize: {
+          double seed = pop().as_double();
+          host_.randomize(seed);
+          break;
+        }
+        case OpCode::WriteFile: {
+          int count = static_cast<int>(inst.operand & 0xFF);
+          std::vector<Value> vals(static_cast<std::size_t>(count));
+          for (int i = count - 1; i >= 0; --i) {
+            vals[static_cast<std::size_t>(i)] = pop();
+          }
+          double fn_d = pop().as_double();
+          int filenum = static_cast<int>(fn_d);
+          if (filenum < 1 || filenum > 255 || file_handles_[filenum] < 0) {
+            trap_error(52, current_line);
+            break;
+          }
+          std::string out;
+          for (int i = 0; i < count; i++) {
+            if (i > 0) out += ",";
+            const Value& v = vals[static_cast<std::size_t>(i)];
+            if (v.is_string()) {
+              out += "\"" + v.as_string() + "\"";
+            } else {
+              out += format_basic_number(v.as_double());
+            }
+          }
+          out += "\n";
+          host_.file_write(file_handles_[filenum], out);
+          break;
+        }
+        case OpCode::FnBind: {
+          std::size_t fn_id = inst.operand;
+          if (fn_id >= fn_descs_.size()) {
+            trap_error(5, current_line);
+            break;
+          }
+          const FnDesc& desc = fn_descs_[fn_id];
+          std::size_t n = desc.param_vars.size();
+          std::vector<Value> args(n);
+          for (std::size_t i = n; i-- > 0;) {
+            args[i] = pop();
+          }
+          std::vector<Value> saved(n);
+          for (std::size_t i = 0; i < n; i++) {
+            saved[i] = var_values_[desc.param_vars[i]];
+          }
+          fn_frames_.push_back({fn_id, std::move(saved)});
+          fn_return_.push_back(ip_);
+          for (std::size_t i = 0; i < n; i++) {
+            var_values_[desc.param_vars[i]] = args[i];
+            var_init_[desc.param_vars[i]] = true;
+          }
+          ip_ = desc.body_pc;
+          break;
+        }
+        case OpCode::FnRet: {
+          if (fn_frames_.empty() || fn_return_.empty()) {
+            trap_error(5, current_line);
+            break;
+          }
+          auto frame = std::move(fn_frames_.back());
+          fn_frames_.pop_back();
+          const FnDesc& desc = fn_descs_[frame.first];
+          for (std::size_t i = 0; i < desc.param_vars.size() &&
+                                  i < frame.second.size();
+               i++) {
+            var_values_[desc.param_vars[i]] = frame.second[i];
+          }
+          ip_ = fn_return_.back();
+          fn_return_.pop_back();
+          break;
+        }
+        case OpCode::StoreTemp: {
+          if (inst.operand >= temp_values_.size()) {
+            trap_error(5, current_line);
+            break;
+          }
+          temp_values_[inst.operand] = pop();
+          break;
+        }
+        case OpCode::LoadTemp: {
+          if (inst.operand >= temp_values_.size()) {
+            trap_error(5, current_line);
+            break;
+          }
+          push(temp_values_[inst.operand]);
+          break;
+        }
+        case OpCode::Stop: {
+          std::ostringstream oss;
+          oss << "Break in " << current_line << "\n";
+          screen_.print(oss.str());
+          screen_.refresh();
+          stopped_ = true;
+          return ExecStatus::Paused;
         }
         case OpCode::Halt: {
           halted_ = true;

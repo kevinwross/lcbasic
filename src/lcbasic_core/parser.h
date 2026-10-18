@@ -88,7 +88,7 @@ struct StopStmt {};
 struct DimStmt {
   std::string name;
   VarType type = VarType::VT_DBL;
-  std::vector<std::int32_t> upper_bounds; // inclusive per dimension
+  std::vector<std::unique_ptr<Expr>> upper_bounds;  // expressions
 };
 
 struct OptionBaseStmt { std::int32_t base; };
@@ -102,7 +102,9 @@ struct ReadTarget {
 };
 struct ReadStmt { std::vector<ReadTarget> targets; };
 
-struct RestoreStmt {};
+struct RestoreStmt {
+  std::int32_t target_line = -1;  // RESTORE line; -1 = start
+};
 
 struct DefFnStmt {
   std::string name;
@@ -122,12 +124,14 @@ struct CloseStmt { std::int32_t filenum; };
 struct PrintFileStmt {
   std::int32_t filenum;
   std::vector<std::unique_ptr<Expr>> args;
+  std::vector<TokenType> separators;
   bool trailing_separator = false;
 };
 
 struct InputFileStmt {
   std::int32_t filenum;
-  std::vector<std::string> vars;
+  std::vector<ReadTarget> targets;
+  bool line_input = false;
 };
 
 struct OnErrorStmt { std::int32_t target_line; };
@@ -174,6 +178,7 @@ struct EventControlStmt {
 // Keyboard input: INPUT [prompt;] var[(indices)][, ...] / LINE INPUT ...
 struct InputStmt {
   std::unique_ptr<Expr> prompt;   // may be null
+  bool prompt_comma = false;      // prompt followed by ',' (adds "? ")
   std::vector<ReadTarget> targets;
   bool line_input = false;
 };
@@ -202,10 +207,22 @@ struct ColorStmt {
 struct ScreenStmt { std::unique_ptr<Expr> mode; };   // stubbed
 struct WidthStmt { std::unique_ptr<Expr> cols; };    // stubbed
 
-// SWAP a, b  (simple variables)
+// SWAP a, b  (variables or array elements)
+struct LValue {
+  std::string name;
+  std::vector<std::unique_ptr<Expr>> indices;
+  bool is_array() const { return !indices.empty(); }
+};
 struct SwapStmt {
-  std::string a;
-  std::string b;
+  LValue a;
+  LValue b;
+};
+
+struct RandomizeStmt { std::unique_ptr<Expr> seed; };
+
+struct WriteFileStmt {
+  std::int32_t filenum;
+  std::vector<std::unique_ptr<Expr>> args;
 };
 
 struct EraseStmt { std::vector<std::string> names; };
@@ -251,7 +268,7 @@ struct Statement {
                WendStmt, OnGotoStmt, ClsStmt, LocateStmt, ColorStmt,
                ScreenStmt, WidthStmt, SwapStmt, EraseStmt, ClearStmt,
                ErrorStmt, MidAssignStmt, StubStmt, FieldStmt, LSetStmt,
-               GetPutStmt>
+               GetPutStmt, RandomizeStmt, WriteFileStmt>
       data;
 };
 
@@ -296,7 +313,11 @@ private:
   std::unique_ptr<Expr> parse_not();          // NOT
   std::unique_ptr<Expr> parse_relational();   // =, <>, <, <=, >, >=
   std::unique_ptr<Expr> parse_additive();     // + -
+  std::unique_ptr<Expr> parse_mod();          // MOD
+  std::unique_ptr<Expr> parse_intdiv();       // integer division
   std::unique_ptr<Expr> parse_multiplicative(); // * /
   std::unique_ptr<Expr> parse_unary();        // unary -
+  std::unique_ptr<Expr> parse_power();        // ^ (left-associative)
+  std::unique_ptr<Expr> parse_power_operand();// operand after ^ (allows sign)
   std::unique_ptr<Expr> parse_primary();      // number, string, var, array, fn
 };

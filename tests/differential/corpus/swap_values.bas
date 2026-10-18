@@ -1,0 +1,10 @@
+10 A$ = "X"
+20 B$ = "Y"
+30 SWAP A$,B$
+40 PRINT A$;B$
+50 DIM N(3)
+60 N(1) = 10
+70 N(2) = 20
+80 SWAP N(1),N(2)
+90 PRINT N(1);N(2)
+100 END

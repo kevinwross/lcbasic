@@ -52,7 +52,7 @@ TEST(dbg_step_into_advances) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
 
   debugger::Debugger dbg(vm);
   // Step through a few instructions.
@@ -74,7 +74,7 @@ TEST(dbg_breakpoint) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
 
   debugger::Debugger dbg(vm);
   dbg.set_breakpoint(30);
@@ -95,7 +95,7 @@ TEST(dbg_step_over) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
 
   debugger::Debugger dbg(vm);
   dbg.set_breakpoint(10);
@@ -117,7 +117,7 @@ TEST(dbg_variables_inspection) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
 
   debugger::Debugger dbg(vm);
   dbg.set_breakpoint(30);
@@ -148,7 +148,7 @@ TEST(dbg_evaluate) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
 
   debugger::Debugger dbg(vm);
   dbg.set_breakpoint(30);
@@ -170,7 +170,7 @@ TEST(dbg_disassemble) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
 
   debugger::Debugger dbg(vm);
   std::string dis = dbg.disassemble();
@@ -189,7 +189,7 @@ TEST(dbg_snapshot_restore) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
 
   debugger::Debugger dbg(vm);
   dbg.set_breakpoint(20);
@@ -212,7 +212,7 @@ TEST(dbg_evaluate_functions) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
 
   debugger::Debugger dbg(vm);
   dbg.set_breakpoint(20);
@@ -243,7 +243,7 @@ TEST(dbg_evaluate_arrays) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
 
   debugger::Debugger dbg(vm);
   dbg.set_breakpoint(30);
@@ -272,7 +272,7 @@ TEST(dbg_evaluate_logical) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
 
   debugger::Debugger dbg(vm);
   dbg.set_breakpoint(20);

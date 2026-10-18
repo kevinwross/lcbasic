@@ -48,7 +48,7 @@ static bool run_compiled(Compiler& compiler, HeadlessScreen& screen) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
   return vm.run();
 }
 
@@ -365,7 +365,7 @@ TEST(e2e_timer_event) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
   REQUIRE(vm.run());
   screen.refresh();
   std::string out = screen.last_output();
@@ -398,7 +398,7 @@ TEST(e2e_dos_commands) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
   bool ok = vm.run();
   std::filesystem::current_path(saved);
   REQUIRE(ok);

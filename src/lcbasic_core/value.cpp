@@ -136,4 +136,8 @@ Value DataPool::read() {
 
 void DataPool::restore() { ptr_ = 0; }
 
+void DataPool::restore_to(std::size_t index) {
+  ptr_ = (index < pool_.size()) ? index : pool_.size();
+}
+
 bool DataPool::exhausted() const { return ptr_ >= pool_.size(); }

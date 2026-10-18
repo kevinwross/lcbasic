@@ -4,6 +4,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -102,6 +103,43 @@ double RealHost::rnd(double seed) {
   if (seed == 0.0) return last_rnd_;
   last_rnd_ = std::uniform_real_distribution<double>(0.0, 1.0)(rng_);
   return last_rnd_;
+}
+
+void RealHost::randomize(double seed) {
+  if (seed == 0.0) {
+    rng_.seed(std::random_device{}());
+  } else {
+    rng_.seed(static_cast<std::uint32_t>(seed));
+  }
+  last_rnd_ = 0.0;
+}
+
+std::string RealHost::date_string() {
+  std::time_t t = std::time(nullptr);
+  std::tm lt{};
+  localtime_r(&t, &lt);
+  char buf[16];
+  std::strftime(buf, sizeof(buf), "%m-%d-%Y", &lt);
+  return buf;
+}
+
+std::string RealHost::time_string() {
+  std::time_t t = std::time(nullptr);
+  std::tm lt{};
+  localtime_r(&t, &lt);
+  char buf[16];
+  std::strftime(buf, sizeof(buf), "%H:%M:%S", &lt);
+  return buf;
+}
+
+std::string RealHost::file_read_chars(int handle, int n) {
+  if (handle < 0 || handle >= static_cast<int>(files_.size()) || n <= 0) {
+    return "";
+  }
+  std::string buf(static_cast<std::size_t>(n), '\0');
+  files_[handle].fs.read(&buf[0], n);
+  buf.resize(static_cast<std::size_t>(files_[handle].fs.gcount()));
+  return buf;
 }
 
 std::string RealHost::input_line() {

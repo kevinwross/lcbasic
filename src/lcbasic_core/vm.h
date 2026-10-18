@@ -43,7 +43,8 @@ public:
             const std::vector<LineEntry>& line_table,
             const std::unordered_map<std::string, std::uint8_t>& variable_table,
             const std::vector<std::string>& variable_names,
-            const std::vector<Value>& data_values);
+            const std::vector<Value>& data_values,
+            const std::vector<FnDesc>& fn_descs = {});
 
   // Run to completion (no debug hook). Returns true on clean HALT.
   bool run();
@@ -58,6 +59,7 @@ public:
   void set_hook(DbgHook* hook) { hook_ = hook; }
 
   const std::vector<std::string>& errors() const { return errors_; }
+  bool stopped() const { return stopped_; }
 
   // ----- State accessors (for the debugger) -----
   std::size_t current_pc() const { return ip_; }
@@ -147,6 +149,14 @@ private:
     int next_offset = 0;
   };
   std::unordered_map<int, RandomFile> random_files_;
+
+  // DEF FN recursion support.
+  std::vector<FnDesc> fn_descs_;
+  std::vector<std::pair<std::size_t, std::vector<Value>>> fn_frames_;
+  std::vector<std::size_t> fn_return_;
+
+  // Untyped scratch slots (for SWAP).
+  std::vector<Value> temp_values_;
   std::vector<Value> stack_;
   std::vector<std::size_t> call_stack_;    // return addresses for GOSUB
   struct ForFrame {
@@ -178,10 +188,12 @@ private:
   };
   std::array<EventSlot, 6> events_;  // indexed by EventKind
   std::size_t event_depth_ = 0;
+  bool event_active_ = false;
   std::int32_t last_line_ = -1;
 
   std::size_t ip_ = 0;
   bool halted_ = false;
+  bool stopped_ = false;
   DbgHook* hook_ = nullptr;
 
   Value pop();

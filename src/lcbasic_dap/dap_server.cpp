@@ -183,7 +183,7 @@ bool DapServer::load_program(const std::string& path) {
   // Vm::load copies its arguments, so the compiler's data can go out of scope.
   vm_->load(compiler.code(), compiler.constants(), compiler.line_table(),
             compiler.variable_table(), compiler.variable_names(),
-            compiler.data_values());
+            compiler.data_values(), compiler.fn_descs());
   dbg_ = std::make_unique<debugger::Debugger>(*vm_);
 
   return true;

@@ -188,6 +188,7 @@ public:
   void add(const Value& v);
   Value read(); // returns next value, advances pointer; numeric zero if exhausted
   void restore(); // reset pointer to start
+  void restore_to(std::size_t index); // set pointer to a specific index
   bool exhausted() const;
 
 private:

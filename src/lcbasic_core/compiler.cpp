@@ -49,6 +49,16 @@ void Compiler::resolve_fixups() {
 }
 
 void Compiler::compile_program() {
+  // Pre-pass: record the DATA pool index at the start of each line so that
+  // RESTORE <line> can be resolved at compile time.
+  std::size_t data_count = 0;
+  for (const auto& [line_number, stmt] : program_.lines) {
+    data_line_index_.push_back({line_number, data_count});
+    if (auto* d = std::get_if<DataStmt>(&stmt.data)) {
+      data_count += d->values.size();
+    }
+  }
+
   for (const auto& [line_number, stmt] : program_.lines) {
     line_table_.push_back(LineEntry{line_number, next_pc()});
     compile_statement(stmt);
@@ -56,6 +66,14 @@ void Compiler::compile_program() {
   emit(OpCode::Halt, program_.lines.empty() ? 0
                                             : program_.lines.back().first);
   resolve_fixups();
+}
+
+std::size_t Compiler::data_index_for_line(std::int32_t line) const {
+  // The first line >= the target determines the DATA position.
+  for (const auto& [ln, idx] : data_line_index_) {
+    if (ln >= line) return idx;
+  }
+  return data_values_.size();
 }
 
 void Compiler::compile_statement(const Statement& stmt) {
@@ -164,17 +182,15 @@ void Compiler::compile_statement(const Statement& stmt) {
         } else if constexpr (std::is_same_v<T, EndStmt>) {
           emit(OpCode::Halt, line);
         } else if constexpr (std::is_same_v<T, StopStmt>) {
-          emit(OpCode::Halt, line);
+          emit(OpCode::Stop, line);
         } else if constexpr (std::is_same_v<T, DimStmt>) {
-          // Evaluate each upper bound expression, push onto stack.
-          for (std::int32_t ub : s.upper_bounds) {
-            auto idx = add_constant(Value(static_cast<double>(ub)));
-            emit(OpCode::Constant, line, idx);
+          // Evaluate each upper bound expression onto the stack.
+          for (auto& ub : s.upper_bounds) {
+            compile_expr(*ub, line);
           }
           std::uint8_t vidx = variable_index(s.name);
           std::uint8_t num_dims =
               static_cast<std::uint8_t>(s.upper_bounds.size());
-          // Encode var index in low byte, num_dims in high byte.
           std::uint32_t operand =
               (static_cast<std::uint32_t>(num_dims) << 8) | vidx;
           emit(OpCode::Dim, line, operand);
@@ -206,42 +222,42 @@ void Compiler::compile_statement(const Statement& stmt) {
             }
           }
         } else if constexpr (std::is_same_v<T, RestoreStmt>) {
-          emit(OpCode::Restore, line);
+          if (s.target_line >= 0) {
+            emit(OpCode::RestoreIndex, line,
+                 static_cast<std::uint32_t>(data_index_for_line(s.target_line)));
+          } else {
+            emit(OpCode::Restore, line);
+          }
         } else if constexpr (std::is_same_v<T, DefFnStmt>) {
           // DEF FN name(p1, p2, ...) = expr
-          // Compile the body as a subroutine: jump over it in normal flow,
-          // then Call it at each use site. Arguments are stored in mangled
-          // parameter variables; the result is stored in a mangled return
-          // variable.
-          std::string ret_var = std::string("\x01FN_") + s.name + "_RET";
-
+          // Compile the body as a subroutine that leaves its result on the
+          // value stack. FnBind/FnRet save and restore parameters so that
+          // recursion works.
           emit(OpCode::Jmp, line, 0);  // skip body during normal execution
           std::size_t skip_idx = code_.size() - 1;
-          std::size_t body_pc = next_pc();
 
-          FnDef def;
-          // Set up parameter renames and allocate their slots.
+          FnDesc desc;
+          desc.body_pc = next_pc();
+
           for (const auto& p : s.params) {
             std::string mangled =
                 std::string("\x01FN_") + s.name + "_" + p;
             rename_[p] = mangled;
-            def.param_vars.push_back(variable_index(mangled));
+            desc.param_vars.push_back(variable_index(mangled));
           }
 
           compile_expr(*s.body, line);
 
           for (const auto& p : s.params) rename_.erase(p);
 
-          std::uint8_t ret_idx = variable_index(ret_var);
-          emit(OpCode::StoreVar, line, ret_idx);
-          emit(OpCode::Ret, line);
+          emit(OpCode::FnRet, line);
 
           // Patch the skip jump to after the body.
           code_[skip_idx].operand = static_cast<std::uint32_t>(next_pc());
 
-          def.return_var = ret_idx;
-          def.body_pc = body_pc;
-          functions_[s.name] = std::move(def);
+          int fn_id = static_cast<int>(fn_descs_.size());
+          fn_descs_.push_back(std::move(desc));
+          functions_[s.name] = fn_id;
         } else if constexpr (std::is_same_v<T, DefTypeStmt>) {
           // Emit one DefType opcode per letter range. Operand encoding:
           // bits 0-7 = lo letter, bits 8-15 = hi letter, bits 16-23 = type.
@@ -348,17 +364,22 @@ void Compiler::compile_statement(const Statement& stmt) {
           emit(OpCode::Constant, line, fn_idx);
           emit(OpCode::Close, line, 0);
         } else if constexpr (std::is_same_v<T, PrintFileStmt>) {
-          // PRINT #filenum, values
+          // PRINT #filenum, values (separators written to the file too)
           for (std::size_t i = 0; i < s.args.size(); ++i) {
             auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
             emit(OpCode::Constant, line, fn_idx);
             compile_expr(*s.args[i], line);
-            if (i > 0) {
+            emit(OpCode::PrintFile, line, 0);
+            TokenType sep =
+                (i < s.separators.size()) ? s.separators[i] : TokenType::Eof;
+            if (sep == TokenType::Comma) {
+              auto fn2 =
+                  add_constant(Value(static_cast<double>(s.filenum)));
+              emit(OpCode::Constant, line, fn2);
               auto sp_idx = add_constant(Value(std::string(" ")));
               emit(OpCode::Constant, line, sp_idx);
-              emit(OpCode::Print, line);
+              emit(OpCode::PrintFile, line, 0);
             }
-            emit(OpCode::PrintFile, line, 0);
           }
           if (!s.trailing_separator) {
             auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
@@ -370,10 +391,21 @@ void Compiler::compile_statement(const Statement& stmt) {
         } else if constexpr (std::is_same_v<T, InputFileStmt>) {
           auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
           emit(OpCode::Constant, line, fn_idx);
-          for (const auto& var : s.vars) {
-            std::uint8_t vidx = variable_index(var);
-            emit(OpCode::InputFile, line, vidx);
+          for (const auto& target : s.targets) {
+            for (auto& idx : target.indices) {
+              compile_expr(*idx, line);
+            }
+            auto n_idx = add_constant(
+                Value(static_cast<double>(target.indices.size())));
+            emit(OpCode::Constant, line, n_idx);
+            auto v_idx = add_constant(
+                Value(static_cast<double>(variable_index(target.name))));
+            emit(OpCode::Constant, line, v_idx);
           }
+          emit(OpCode::InputFile,
+               line,
+               static_cast<std::uint32_t>(s.targets.size()) |
+                   (s.line_input ? 0x100u : 0u));
         } else if constexpr (std::is_same_v<T, OnErrorStmt>) {
           if (s.target_line == 0) {
             // ON ERROR GOTO 0 disables the handler.
@@ -415,7 +447,8 @@ void Compiler::compile_statement(const Statement& stmt) {
           emit(OpCode::Input,
                line,
                static_cast<std::uint32_t>(s.targets.size()) |
-                   (s.line_input ? 0x100u : 0u));
+                   (s.line_input ? 0x100u : 0u) |
+                   (s.prompt_comma ? 0x200u : 0u));
         } else if constexpr (std::is_same_v<T, WhileStmt>) {
           std::size_t cond_pc = next_pc();
           compile_expr(*s.condition, line);
@@ -471,22 +504,57 @@ void Compiler::compile_statement(const Statement& stmt) {
           compile_expr(*s.cols, line);
           emit(OpCode::Pop, line);
         } else if constexpr (std::is_same_v<T, SwapStmt>) {
-          std::string tmp = std::string("\x01SWAP_TMP");
-          std::uint8_t a = variable_index(s.a);
-          std::uint8_t b = variable_index(s.b);
-          std::uint8_t t = variable_index(tmp);
-          emit(OpCode::LoadVar, line, a);
-          emit(OpCode::StoreVar, line, t);
-          emit(OpCode::LoadVar, line, b);
-          emit(OpCode::StoreVar, line, a);
-          emit(OpCode::LoadVar, line, t);
-          emit(OpCode::StoreVar, line, b);
+          // SWAP a, b using untyped temp slots (so strings work too).
+          auto load_lvalue = [&](const LValue& lv) {
+            if (lv.is_array()) {
+              for (auto& idx : lv.indices) compile_expr(*idx, line);
+              std::uint8_t vidx = variable_index(lv.name);
+              std::uint8_t n = static_cast<std::uint8_t>(lv.indices.size());
+              emit(OpCode::ArrayLoad, line,
+                   (static_cast<std::uint32_t>(n) << 8) | vidx);
+            } else {
+              emit(OpCode::LoadVar, line, variable_index(lv.name));
+            }
+          };
+          auto store_lvalue = [&](const LValue& lv, std::uint32_t slot) {
+            if (lv.is_array()) {
+              for (auto& idx : lv.indices) compile_expr(*idx, line);
+              emit(OpCode::LoadTemp, line, slot);
+              std::uint8_t vidx = variable_index(lv.name);
+              std::uint8_t n = static_cast<std::uint8_t>(lv.indices.size());
+              emit(OpCode::ArrayStore, line,
+                   (static_cast<std::uint32_t>(n) << 8) | vidx);
+            } else {
+              emit(OpCode::LoadTemp, line, slot);
+              emit(OpCode::StoreVar, line, variable_index(lv.name));
+            }
+          };
+          load_lvalue(s.a);
+          emit(OpCode::StoreTemp, line, 0);
+          load_lvalue(s.b);
+          emit(OpCode::StoreTemp, line, 1);
+          store_lvalue(s.a, 1);
+          store_lvalue(s.b, 0);
         } else if constexpr (std::is_same_v<T, EraseStmt>) {
           for (const auto& name : s.names) {
             emit(OpCode::Erase, line, variable_index(name));
           }
         } else if constexpr (std::is_same_v<T, ClearStmt>) {
           emit(OpCode::Clear, line);
+        } else if constexpr (std::is_same_v<T, RandomizeStmt>) {
+          if (s.seed) {
+            compile_expr(*s.seed, line);
+          } else {
+            auto idx = add_constant(Value(0.0));
+            emit(OpCode::Constant, line, idx);
+          }
+          emit(OpCode::Randomize, line);
+        } else if constexpr (std::is_same_v<T, WriteFileStmt>) {
+          auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
+          emit(OpCode::Constant, line, fn_idx);
+          for (auto& a : s.args) compile_expr(*a, line);
+          emit(OpCode::WriteFile, line,
+               static_cast<std::uint32_t>(s.args.size()));
         } else if constexpr (std::is_same_v<T, ErrorStmt>) {
           compile_expr(*s.code, line);
           emit(OpCode::RaiseError, line);
@@ -540,22 +608,14 @@ void Compiler::compile_expr(const Expr& expr, std::int32_t line) {
             emit(OpCode::Constant, line, add_constant(Value(0.0)));
             return;
           }
-          const FnDef& def = it->second;
-          if (def.param_vars.size() != arg.args.size()) {
+          int fn_id = it->second;
+          const FnDesc& desc = fn_descs_[static_cast<std::size_t>(fn_id)];
+          if (desc.param_vars.size() != arg.args.size()) {
             errors_.push_back("wrong number of arguments to FN " + arg.name);
           }
-          // Evaluate each argument once, store into its parameter slot.
-          for (std::size_t i = 0; i < arg.args.size(); i++) {
-            compile_expr(*arg.args[i], line);
-            if (i < def.param_vars.size()) {
-              emit(OpCode::StoreVar, line, def.param_vars[i]);
-            } else {
-              emit(OpCode::Pop, line);
-            }
-          }
-          // Call the function body; it stores its result in the return slot.
-          emit(OpCode::Call, line, static_cast<std::uint32_t>(def.body_pc));
-          emit(OpCode::LoadVar, line, def.return_var);
+          // Push the argument values, then bind and call.
+          for (auto& a : arg.args) compile_expr(*a, line);
+          emit(OpCode::FnBind, line, static_cast<std::uint32_t>(fn_id));
         } else if constexpr (std::is_same_v<T, BuiltinExpr>) {
           if (arg.name == "TIMER") {
             emit(OpCode::TimerFunc, line);
@@ -576,9 +636,14 @@ void Compiler::compile_expr(const Expr& expr, std::int32_t line) {
               (static_cast<std::uint32_t>(arg.args.size()) & 0xFF);
           emit(OpCode::CallBuiltin, line, operand);
         } else if constexpr (std::is_same_v<T, UnaryExpr>) {
-          compile_expr(*arg.operand, line);
           if (arg.op == TokenType::Not) {
+            compile_expr(*arg.operand, line);
             emit(OpCode::Not, line);
+          } else if (arg.op == TokenType::Minus) {
+            auto z = add_constant(Value(0.0));
+            emit(OpCode::Constant, line, z);
+            compile_expr(*arg.operand, line);
+            emit(OpCode::Sub, line);
           } else {
             errors_.push_back("unsupported unary operator");
           }
@@ -601,6 +666,9 @@ void Compiler::compile_expr(const Expr& expr, std::int32_t line) {
             case TokenType::Xor: emit(OpCode::Xor, line); break;
             case TokenType::Eqv: emit(OpCode::Eqv, line); break;
             case TokenType::Imp: emit(OpCode::Imp, line); break;
+            case TokenType::Caret: emit(OpCode::Pow, line); break;
+            case TokenType::Backslash: emit(OpCode::IntDiv, line); break;
+            case TokenType::Mod: emit(OpCode::Mod, line); break;
             default: errors_.push_back("unsupported binary operator"); break;
           }
         }

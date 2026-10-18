@@ -78,29 +78,37 @@ static bool save_text_lines(
 static bool run_direct_statement(const std::string& source, Screen& screen,
                                  Host& host);
 
-// Compile a Program and run it on the given screen.
-static bool run_program(const Program& program, Screen& screen, Host& host) {
+// Compile a Program and run it. Returns the VM (which may be stopped at a
+// STOP and resumable via CONT), or nullptr on error/completion.
+static std::unique_ptr<Vm> run_program_vm(const Program& program,
+                                         Screen& screen, Host& host) {
   Compiler compiler(program);
   if (!compiler.compile()) {
     for (const auto& err : compiler.errors()) {
       std::cerr << "lcbasic: " << err << "\n";
     }
-    return false;
+    return nullptr;
   }
 
-  Vm vm(screen, host);
-  vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
-          compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
-  if (!vm.run()) {
-    for (const auto& err : vm.errors()) {
+  auto vm = std::make_unique<Vm>(screen, host);
+  vm->load(compiler.code(), compiler.constants(), compiler.line_table(),
+           compiler.variable_table(), compiler.variable_names(),
+           compiler.data_values(), compiler.fn_descs());
+  bool ok = vm->run();
+  screen.refresh();
+  if (!ok && !vm->stopped()) {
+    for (const auto& err : vm->errors()) {
       std::cerr << "lcbasic: " << err << "\n";
     }
-    screen.refresh();
-    return false;
+    return nullptr;
   }
-  screen.refresh();
-  return true;
+  return vm;
+}
+
+// Compile a Program and run it on the given screen.
+static bool run_program(const Program& program, Screen& screen, Host& host) {
+  auto vm = run_program_vm(program, screen, host);
+  return vm != nullptr;
 }
 
 // ---------- REPL ----------
@@ -110,6 +118,7 @@ static void repl(Screen& screen, Host& host) {
   std::cout << "Type 'bye' to exit.\n\n";
 
   ProgramStore store;
+  std::unique_ptr<Vm> last_vm;
 
   while (true) {
     std::cout << "> ";
@@ -191,8 +200,19 @@ static void repl(Screen& screen, Host& host) {
           program.lines.push_back(std::move(s));
         }
       }
-      run_program(program, screen, host);
+      last_vm = run_program_vm(program, screen, host);
     run_done:;
+    } else if (input == "CONT" || input == "cont") {
+      if (last_vm && last_vm->stopped()) {
+        if (!last_vm->run() && !last_vm->stopped()) {
+          for (const auto& err : last_vm->errors()) {
+            std::cerr << "lcbasic: " << err << "\n";
+          }
+          last_vm.reset();
+        }
+      } else {
+        std::cout << "Can't continue\n";
+      }
     } else if (rest.empty() && had_line_number) {
       // Just a line number with no statement: delete that line.
       store.lines.erase(

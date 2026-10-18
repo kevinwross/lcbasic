@@ -65,12 +65,15 @@ bool Parser::parse_statement() {
     Statement stmt;
     stmt.line_number = line_number;
 
-    if (check(TokenType::KeywordPrint)) {
+    if (check(TokenType::KeywordPrint) || check(TokenType::Question)) {
       // Look ahead: PRINT #filenum is file output, otherwise regular PRINT.
-      std::size_t print_save = current_;
-      advance(); // consume PRINT
-      bool is_print_file = check(TokenType::KeywordHash);
-      current_ = print_save; // put PRINT back
+      bool is_print_file = false;
+      if (check(TokenType::KeywordPrint)) {
+        std::size_t print_save = current_;
+        advance(); // consume PRINT
+        is_print_file = check(TokenType::KeywordHash);
+        current_ = print_save; // put PRINT back
+      }
       if (is_print_file) {
         match(TokenType::KeywordPrint);
         consume(TokenType::KeywordHash, "expected '#' after PRINT");
@@ -79,18 +82,29 @@ bool Parser::parse_statement() {
         pfile.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
         if (match(TokenType::Comma)) {
         }
-        do {
+        while (!is_at_end() && !check(TokenType::Newline) &&
+               !check(TokenType::Colon)) {
           auto expr = parse_expression();
           if (!expr) return false;
           pfile.args.push_back(std::move(expr));
-        } while (match(TokenType::Comma) || match(TokenType::Semicolon));
+          if (check(TokenType::Comma) || check(TokenType::Semicolon)) {
+            pfile.separators.push_back(peek().type);
+            advance();
+            if (is_at_end() || check(TokenType::Newline) ||
+                check(TokenType::Colon)) {
+              break;
+            }
+          } else {
+            pfile.separators.push_back(TokenType::Eof);
+            break;
+          }
+        }
         pfile.trailing_separator =
-            (current_ > 0 &&
-             (tokens_[current_ - 1].type == TokenType::Comma ||
-              tokens_[current_ - 1].type == TokenType::Semicolon));
+            (!pfile.separators.empty() &&
+             pfile.separators.back() != TokenType::Eof);
         stmt.data = std::move(pfile);
       } else {
-        match(TokenType::KeywordPrint);
+        advance();  // consume PRINT or '?'
         PrintStmt print;
         while (!is_at_end() && !check(TokenType::Newline) &&
                !check(TokenType::Colon)) {
@@ -229,11 +243,11 @@ bool Parser::parse_statement() {
     } else if (match(TokenType::KeywordStop)) {
       stmt.data = StopStmt{};
     } else if (match(TokenType::KeywordRem)) {
-      while (!is_at_end() && !check(TokenType::Newline) &&
-             !check(TokenType::Colon)) {
+      // REM consumes the rest of the line (including any colons).
+      while (!is_at_end() && !check(TokenType::Newline)) {
         advance();
       }
-      continue;
+      break;
     } else if (match(TokenType::KeywordDim)) {
       DimStmt dim;
       consume(TokenType::Identifier, "expected array name after DIM");
@@ -242,12 +256,9 @@ bool Parser::parse_statement() {
       dim.type = deduce_var_type(dim.name);
       consume(TokenType::LParen, "expected '(' after array name");
       do {
-        if (!check(TokenType::Number)) {
-          error_at_current("expected numeric constant for array bound");
-          return false;
-        }
-        Token ub_tok = advance();
-        dim.upper_bounds.push_back(static_cast<std::int32_t>(ub_tok.number));
+        auto ub = parse_expression();
+        if (!ub) return false;
+        dim.upper_bounds.push_back(std::move(ub));
       } while (match(TokenType::Comma));
       consume(TokenType::RParen, "expected ')' after dimensions");
       stmt.data = std::move(dim);
@@ -267,6 +278,14 @@ bool Parser::parse_statement() {
         } else if (check(TokenType::Number)) {
           Token t = advance();
           data.values.push_back(Value(t.number));
+        } else if (check(TokenType::Minus)) {
+          advance();
+          consume(TokenType::Number, "expected number after '-' in DATA");
+          data.values.push_back(Value(-tokens_[current_ - 1].number));
+        } else if (check(TokenType::Identifier)) {
+          // Unquoted string literal.
+          Token t = advance();
+          data.values.push_back(Value(t.lexeme));
         } else {
           error_at_current("expected DATA value");
           return false;
@@ -299,7 +318,12 @@ bool Parser::parse_statement() {
       } while (match(TokenType::Comma));
       stmt.data = std::move(read);
     } else if (match(TokenType::KeywordRestore)) {
-      stmt.data = RestoreStmt{};
+      RestoreStmt r;
+      if (check(TokenType::Number)) {
+        Token t = advance();
+        r.target_line = static_cast<std::int32_t>(t.number);
+      }
+      stmt.data = std::move(r);
     } else if (match(TokenType::KeywordDef)) {
       consume(TokenType::KeywordFn, "expected FN after DEF");
       DefFnStmt def;
@@ -377,12 +401,21 @@ bool Parser::parse_statement() {
           // optional comma
         }
         do {
-          if (!check(TokenType::Identifier)) {
-            error_at_current("expected variable name after INPUT #");
-            return false;
+          ReadTarget target;
+          consume(TokenType::Identifier,
+                  "expected variable name after INPUT #");
+          target.name = tokens_[current_ - 1].lexeme;
+          if (check(TokenType::LParen)) {
+            target.is_array = true;
+            advance();
+            do {
+              auto idx = parse_expression();
+              if (!idx) return false;
+              target.indices.push_back(std::move(idx));
+            } while (match(TokenType::Comma));
+            consume(TokenType::RParen, "expected ')' after indices");
           }
-          Token var_tok = advance();
-          ifile.vars.push_back(var_tok.lexeme);
+          ifile.targets.push_back(std::move(target));
         } while (match(TokenType::Comma));
         stmt.data = std::move(ifile);
       } else {
@@ -395,6 +428,8 @@ bool Parser::parse_statement() {
             error_at_current("expected ';' or ',' after INPUT prompt");
             return false;
           }
+          in.prompt_comma =
+              (tokens_[current_ - 1].type == TokenType::Comma);
         }
         do {
           ReadTarget target;
@@ -606,35 +641,68 @@ bool Parser::parse_statement() {
       std::size_t save = current_;
       advance();  // LINE
       if (match(TokenType::KeywordInput)) {
-        // LINE INPUT [prompt;] var$
-        InputStmt in;
-        in.line_input = true;
-        if (check(TokenType::String)) {
-          in.prompt = parse_expression();
-          if (!in.prompt) return false;
-          if (!match(TokenType::Semicolon) && !match(TokenType::Comma)) {
-            error_at_current("expected ';' or ',' after LINE INPUT prompt");
-            return false;
+        if (check(TokenType::KeywordHash)) {
+          // LINE INPUT #n, var$
+          advance();  // '#'
+          InputFileStmt ifile;
+          ifile.line_input = true;
+          consume(TokenType::Number, "expected file number after '#'");
+          ifile.filenum =
+              static_cast<std::int32_t>(tokens_[current_ - 1].number);
+          if (match(TokenType::Comma)) {
           }
+          do {
+            ReadTarget target;
+            consume(TokenType::Identifier,
+                    "expected variable after LINE INPUT #");
+            target.name = tokens_[current_ - 1].lexeme;
+            if (check(TokenType::LParen)) {
+              target.is_array = true;
+              advance();
+              do {
+                auto idx = parse_expression();
+                if (!idx) return false;
+                target.indices.push_back(std::move(idx));
+              } while (match(TokenType::Comma));
+              consume(TokenType::RParen, "expected ')' after indices");
+            }
+            ifile.targets.push_back(std::move(target));
+          } while (match(TokenType::Comma));
+          stmt.data = std::move(ifile);
+        } else {
+          // LINE INPUT [prompt;] var$
+          InputStmt in;
+          in.line_input = true;
+          if (check(TokenType::String)) {
+            in.prompt = parse_expression();
+            if (!in.prompt) return false;
+            if (!match(TokenType::Semicolon) && !match(TokenType::Comma)) {
+              error_at_current(
+                  "expected ';' or ',' after LINE INPUT prompt");
+              return false;
+            }
+            in.prompt_comma =
+                (tokens_[current_ - 1].type == TokenType::Comma);
+          }
+          do {
+            ReadTarget target;
+            consume(TokenType::Identifier,
+                    "expected variable after LINE INPUT");
+            target.name = tokens_[current_ - 1].lexeme;
+            if (check(TokenType::LParen)) {
+              target.is_array = true;
+              advance();
+              do {
+                auto idx = parse_expression();
+                if (!idx) return false;
+                target.indices.push_back(std::move(idx));
+              } while (match(TokenType::Comma));
+              consume(TokenType::RParen, "expected ')' after indices");
+            }
+            in.targets.push_back(std::move(target));
+          } while (match(TokenType::Comma));
+          stmt.data = std::move(in);
         }
-        do {
-          ReadTarget target;
-          consume(TokenType::Identifier,
-                  "expected variable after LINE INPUT");
-          target.name = tokens_[current_ - 1].lexeme;
-          if (check(TokenType::LParen)) {
-            target.is_array = true;
-            advance();
-            do {
-              auto idx = parse_expression();
-              if (!idx) return false;
-              target.indices.push_back(std::move(idx));
-            } while (match(TokenType::Comma));
-            consume(TokenType::RParen, "expected ')' after indices");
-          }
-          in.targets.push_back(std::move(target));
-        } while (match(TokenType::Comma));
-        stmt.data = std::move(in);
       } else {
         // Graphics LINE — parsed but not implemented.
         current_ = save;
@@ -653,12 +721,23 @@ bool Parser::parse_statement() {
     } else if (match(TokenType::KeywordWend)) {
       stmt.data = WendStmt{};
     } else if (match(TokenType::KeywordSwap)) {
+      auto parse_lvalue = [&](LValue& lv) -> bool {
+        consume(TokenType::Identifier, "expected variable after SWAP");
+        lv.name = tokens_[current_ - 1].lexeme;
+        if (match(TokenType::LParen)) {
+          do {
+            auto idx = parse_expression();
+            if (!idx) return false;
+            lv.indices.push_back(std::move(idx));
+          } while (match(TokenType::Comma));
+          consume(TokenType::RParen, "expected ')' after SWAP index");
+        }
+        return true;
+      };
       SwapStmt sw;
-      consume(TokenType::Identifier, "expected variable after SWAP");
-      sw.a = tokens_[current_ - 1].lexeme;
+      if (!parse_lvalue(sw.a)) return false;
       consume(TokenType::Comma, "expected ',' in SWAP");
-      consume(TokenType::Identifier, "expected variable after SWAP");
-      sw.b = tokens_[current_ - 1].lexeme;
+      if (!parse_lvalue(sw.b)) return false;
       stmt.data = std::move(sw);
     } else if (match(TokenType::KeywordErase)) {
       EraseStmt e;
@@ -669,6 +748,28 @@ bool Parser::parse_statement() {
       stmt.data = std::move(e);
     } else if (match(TokenType::KeywordClear)) {
       stmt.data = ClearStmt{};
+    } else if (match(TokenType::KeywordRandomize)) {
+      RandomizeStmt r;
+      if (!check(TokenType::Newline) && !check(TokenType::Colon) &&
+          !is_at_end()) {
+        r.seed = parse_expression();
+        if (!r.seed) return false;
+      }
+      stmt.data = std::move(r);
+    } else if (match(TokenType::KeywordWrite)) {
+      WriteFileStmt w;
+      consume(TokenType::KeywordHash, "expected '#' after WRITE");
+      consume(TokenType::Number, "expected file number after '#'");
+      w.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      if (match(TokenType::Comma)) {
+        // optional comma
+      }
+      do {
+        auto expr = parse_expression();
+        if (!expr) return false;
+        w.args.push_back(std::move(expr));
+      } while (match(TokenType::Comma));
+      stmt.data = std::move(w);
     } else if (match(TokenType::KeywordCls)) {
       stmt.data = ClsStmt{};
     } else if (match(TokenType::KeywordLocate)) {
@@ -1011,14 +1112,41 @@ std::unique_ptr<Expr> Parser::parse_relational() {
 }
 
 std::unique_ptr<Expr> Parser::parse_additive() {
-  auto left = parse_multiplicative();
+  auto left = parse_mod();
   if (!left) return nullptr;
   while (match(TokenType::Plus) || match(TokenType::Minus)) {
     TokenType op = tokens_[current_ - 1].type;
-    auto right = parse_multiplicative();
+    auto right = parse_mod();
     if (!right) return nullptr;
     auto e = std::make_unique<Expr>();
     e->data = BinaryExpr{std::move(left), op, std::move(right)};
+    left = std::move(e);
+  }
+  return left;
+}
+
+std::unique_ptr<Expr> Parser::parse_mod() {
+  auto left = parse_intdiv();
+  if (!left) return nullptr;
+  while (match(TokenType::Mod)) {
+    auto right = parse_intdiv();
+    if (!right) return nullptr;
+    auto e = std::make_unique<Expr>();
+    e->data = BinaryExpr{std::move(left), TokenType::Mod, std::move(right)};
+    left = std::move(e);
+  }
+  return left;
+}
+
+std::unique_ptr<Expr> Parser::parse_intdiv() {
+  auto left = parse_multiplicative();
+  if (!left) return nullptr;
+  while (match(TokenType::Backslash)) {
+    auto right = parse_multiplicative();
+    if (!right) return nullptr;
+    auto e = std::make_unique<Expr>();
+    e->data =
+        BinaryExpr{std::move(left), TokenType::Backslash, std::move(right)};
     left = std::move(e);
   }
   return left;
@@ -1040,16 +1168,44 @@ std::unique_ptr<Expr> Parser::parse_multiplicative() {
 
 std::unique_ptr<Expr> Parser::parse_unary() {
   if (match(TokenType::Minus)) {
-    auto operand = parse_unary();
+    auto operand = parse_power();
     if (!operand) return nullptr;
     auto e = std::make_unique<Expr>();
-    e->data = BinaryExpr{std::make_unique<Expr>(), TokenType::Minus,
-                         std::move(operand)};
-    std::get<BinaryExpr>(e->data).left->data = NumberExpr{0.0};
+    e->data = UnaryExpr{TokenType::Minus, std::move(operand)};
     return e;
   }
   if (match(TokenType::Plus)) {
-    return parse_unary();
+    return parse_power();
+  }
+  return parse_power();
+}
+
+std::unique_ptr<Expr> Parser::parse_power() {
+  auto left = parse_primary();
+  if (!left) return nullptr;
+  // GW-BASIC exponentiation is left-associative: 2^3^2 = (2^3)^2 = 64.
+  while (match(TokenType::Caret)) {
+    auto right = parse_power_operand();
+    if (!right) return nullptr;
+    auto e = std::make_unique<Expr>();
+    e->data = BinaryExpr{std::move(left), TokenType::Caret, std::move(right)};
+    left = std::move(e);
+  }
+  return left;
+}
+
+// Operand after '^': allows a leading sign but does not consume further '^'
+// (so the exponentiation loop stays left-associative).
+std::unique_ptr<Expr> Parser::parse_power_operand() {
+  if (match(TokenType::Minus)) {
+    auto operand = parse_power_operand();
+    if (!operand) return nullptr;
+    auto e = std::make_unique<Expr>();
+    e->data = UnaryExpr{TokenType::Minus, std::move(operand)};
+    return e;
+  }
+  if (match(TokenType::Plus)) {
+    return parse_power_operand();
   }
   return parse_primary();
 }
@@ -1089,6 +1245,10 @@ std::unique_ptr<Expr> Parser::parse_primary() {
     auto e = std::make_unique<Expr>();
     e->data = BuiltinExpr{"TIMER"};
     return e;
+  }
+  if (match(TokenType::KeywordHash)) {
+    // '#' marks a file number inside INPUT$(n, #f).
+    return parse_primary();
   }
   if (match(TokenType::KeywordMid)) {
     // MID$(str, start[, length]) used as a function.
@@ -1130,9 +1290,11 @@ std::unique_ptr<Expr> Parser::parse_primary() {
       e->data = ArrayRefExpr{std::move(name), std::move(args)};
       return e;
     }
-    // No parentheses: zero-argument built-ins (CSRLIN, RND).
+    // No parentheses: zero-argument built-ins.
     if (auto b = find_builtin(name)) {
-      if (*b == Builtin::Csrlin || *b == Builtin::Rnd) {
+      if (*b == Builtin::Csrlin || *b == Builtin::Rnd ||
+          *b == Builtin::Inkey || *b == Builtin::Date ||
+          *b == Builtin::Time) {
         auto e = std::make_unique<Expr>();
         e->data = FunctionExpr{std::move(name), {}};
         return e;

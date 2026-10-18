@@ -10,7 +10,7 @@ enum class Builtin : std::uint8_t {
   CInt, CSng, CDbl,
   Len, Left, Right, Mid, Instr, Val, Str, Chr, Asc, Space, StringFn,
   UCase, LCase, Hex, Oct,
-  Tab, Spc, Fre, Pos, Csrlin,
+  Tab, Spc, Fre, Pos, Csrlin, Inkey, Date, Time, InputDollar,
 };
 
 // Look up a built-in by (case-insensitive) name. Names include '$' where

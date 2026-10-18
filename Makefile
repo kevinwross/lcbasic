@@ -37,7 +37,8 @@ TEST_SRC := tests/test_main.cpp \
             tests/test_bugs.cpp \
             tests/test_statements.cpp \
             tests/test_functions.cpp \
-            tests/test_operators.cpp
+            tests/test_operators.cpp \
+            tests/test_extensions.cpp
 
 LIB_SRC := $(CORE_SRC) $(SCREEN_SRC) $(DEBUG_SRC) $(DAP_SRC)
 

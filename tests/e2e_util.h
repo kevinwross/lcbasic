@@ -69,7 +69,7 @@ inline RunResult run_with_host(const std::string& source, Host& host) {
   Vm vm(screen, host);
   vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
           compiler.variable_table(), compiler.variable_names(),
-          compiler.data_values());
+          compiler.data_values(), compiler.fn_descs());
   res.ran = vm.run();
   for (auto& e : vm.errors()) res.error += e + "\n";
   res.trapped = !res.ran && !res.error.empty();

@@ -127,6 +127,19 @@ Notes:
   be virtualised through `Host`).
 - Logical/bitwise operators `AND`/`OR`/`NOT`/`XOR`/`EQV`/`IMP` are
   implemented on 16-bit integers (true = -1), with GW-BASIC precedence.
+- Arithmetic: `^` (left-associative), `\` integer division, `MOD`.
+- Lexer is case-insensitive for keywords and variables; `'` apostrophe
+  comments and `?` (PRINT) are supported.
+- `DIM` bounds may be expressions; `DATA` accepts unquoted strings and
+  negative numbers; `RESTORE <line>` is supported.
+- `INPUT`/`LINE INPUT` support array elements and re-prompt on bad input;
+  `INPUT #` / `LINE INPUT #` / `WRITE #` support multiple values;
+  `PRINT #` writes separators to the file.
+- `STOP` prints "Break in N" and is resumable with `CONT`; `SWAP` works on
+  scalars and array elements; re-DIM raises "Duplicate definition".
+- Built-ins also include `INKEY$`, `DATE$`, `TIME$`, `INPUT$`.
+- KEY events fire when a key is available; COM/PEN/STRIG remain armed
+  (no event source).
 - Random-access files: `OPEN ... FOR RANDOM [LEN=]`, `FIELD`, `LSET`/`RSET`,
   `GET`/`PUT`, `CLOSE`.
 - Built-in functions: numeric (`ABS`…`CDBL`, `RND`), string (`LEN`…`OCT$`),

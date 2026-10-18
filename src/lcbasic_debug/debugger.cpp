@@ -33,6 +33,9 @@ const char* opcode_name(OpCode op) {
     case OpCode::Xor: return "XOR";
     case OpCode::Eqv: return "EQV";
     case OpCode::Imp: return "IMP";
+    case OpCode::Pow: return "POW";
+    case OpCode::IntDiv: return "IDIV";
+    case OpCode::Mod: return "MOD";
     case OpCode::Print: return "PRINT";
     case OpCode::Pop: return "POP";
     case OpCode::Jmp: return "JMP";
@@ -74,6 +77,14 @@ const char* opcode_name(OpCode op) {
     case OpCode::LSet: return "LSET";
     case OpCode::GetRecord: return "GET";
     case OpCode::PutRecord: return "PUT";
+    case OpCode::RestoreIndex: return "RESTOREI";
+    case OpCode::Randomize: return "RANDOMIZE";
+    case OpCode::WriteFile: return "WRITE#";
+    case OpCode::FnBind: return "FNBIND";
+    case OpCode::FnRet: return "FNRET";
+    case OpCode::StoreTemp: return "STEMP";
+    case OpCode::LoadTemp: return "LTEMP";
+    case OpCode::Stop: return "STOP";
     case OpCode::Open: return "OPEN";
     case OpCode::Close: return "CLOSE";
     case OpCode::PrintFile: return "PRINT#";
@@ -161,6 +172,26 @@ Value eval_binary(EvalContext& ctx, const BinaryExpr& b) {
       return Value(static_cast<double>(static_cast<std::int16_t>(
           (~static_cast<std::int16_t>(std::round(a))) |
           static_cast<std::int16_t>(std::round(c)))));
+    case TokenType::Caret:
+      return Value(std::pow(a, c));
+    case TokenType::Backslash: {
+      long y = static_cast<long>(std::round(c));
+      if (y == 0) {
+        ctx.ok = false;
+        ctx.error = "division by zero";
+        return Value{};
+      }
+      return Value(static_cast<double>(static_cast<long>(std::round(a)) / y));
+    }
+    case TokenType::Mod: {
+      long y = static_cast<long>(std::round(c));
+      if (y == 0) {
+        ctx.ok = false;
+        ctx.error = "division by zero";
+        return Value{};
+      }
+      return Value(static_cast<double>(static_cast<long>(std::round(a)) % y));
+    }
     default:
       ctx.ok = false;
       ctx.error = "unsupported operator";
@@ -190,6 +221,9 @@ Value eval_expr(EvalContext& ctx, const Expr& expr) {
           if (arg.op == TokenType::Not) {
             std::int16_t x = static_cast<std::int16_t>(std::round(v.as_double()));
             return Value(static_cast<double>(static_cast<std::int16_t>(~x)));
+          }
+          if (arg.op == TokenType::Minus) {
+            return Value(-v.as_double());
           }
           ctx.ok = false;
           ctx.error = "unsupported unary operator";
