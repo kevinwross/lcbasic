@@ -37,6 +37,7 @@ const char* opcode_name(OpCode op) {
     case OpCode::IntDiv: return "IDIV";
     case OpCode::Mod: return "MOD";
     case OpCode::Print: return "PRINT";
+    case OpCode::PrintUsing: return "PRINTUSING";
     case OpCode::Pop: return "POP";
     case OpCode::Jmp: return "JMP";
     case OpCode::JmpFalse: return "JMPF";

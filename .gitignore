@@ -23,5 +23,9 @@ Testing/
 !fixtures/**
 !tests/differential/corpus/**
 
+# Local sample programs/data (not part of the project)
+samples/
+FamousBirthdays.dat
+
 # Local make build
 build-make/

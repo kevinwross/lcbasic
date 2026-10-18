@@ -1,0 +1,5 @@
+10 PRINT USING "###"; 5
+20 PRINT USING "###"; 42
+30 PRINT USING "\      \"; "AB"
+40 PRINT USING "\      \"; "ABCDEFGH"
+50 END

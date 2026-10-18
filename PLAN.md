@@ -147,6 +147,16 @@ Notes:
   `ON ... GOTO/GOSUB`, and array assignments; REM-only lines remain valid
   `GOTO` targets. Variable indices are 16-bit (programs may have >256
   variables) and the constant pool is 32-bit.
+- `IF ... THEN ...` follows GW-BASIC's "rest of the line" rule: statements
+  after `THEN`/`ELSE`, including colon-separated ones, are conditional.
+  `THEN` clauses support `GOSUB`, `RETURN`, `ON ... GOTO`, `CLS`, `LOCATE`,
+  nested `IF`, and assignments.
+- `PRINT USING` supports `#`/`.` numeric fields and `\ ... \` string fields
+  (plus `!` and `&`); `EOF(n)` is available for file loops.
+- DOS-style paths (`\`, drive letters) are translated to POSIX paths.
+- The screen is flushed at line boundaries so interactive `INKEY$` loops
+  display their output. `INKEY$` maps Enter to CR (13), backspace to 8,
+  and arrow keys to 130 (up) / 136 (down) / 139 (left) / 140 (right).
 - Random-access files: `OPEN ... FOR RANDOM [LEN=]`, `FIELD`, `LSET`/`RSET`,
   `GET`/`PUT`, `CLOSE`.
 - Built-in functions: numeric (`ABS`…`CDBL`, `RND`), string (`LEN`…`OCT$`),

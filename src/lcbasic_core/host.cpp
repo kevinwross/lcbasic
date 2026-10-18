@@ -39,6 +39,19 @@ std::string lower(std::string s) {
   return s;
 }
 
+// Translate a DOS/GW-BASIC path to a POSIX one: backslashes become slashes,
+// and a leading drive letter ("C:") is dropped.
+std::string native_path(std::string p) {
+  for (char& c : p) {
+    if (c == '\\') c = '/';
+  }
+  if (p.size() >= 2 && std::isalpha(static_cast<unsigned char>(p[0])) &&
+      p[1] == ':') {
+    p.erase(0, 2);
+  }
+  return p;
+}
+
 }  // namespace
 
 int RealHost::file_open(const std::string& filename,
@@ -56,7 +69,7 @@ int RealHost::file_open(const std::string& filename,
   }
 
   auto entry = std::make_unique<FileEntry>();
-  entry->fs.open(filename, om);
+  entry->fs.open(native_path(filename), om);
   entry->writing = writing;
   if (!entry->fs.is_open()) return -1;
 
@@ -72,7 +85,11 @@ void RealHost::file_close(int handle) {
 
 bool RealHost::file_eof(int handle) {
   if (handle < 0 || handle >= static_cast<int>(files_.size())) return true;
-  return files_[handle].fs.eof();
+  auto& fs = files_[handle].fs;
+  if (fs.eof()) return true;
+  // getline() does not set eofbit after consuming the final newline, so peek
+  // to detect that the pointer is already at end-of-file.
+  return fs.peek() == std::char_traits<char>::eof();
 }
 
 void RealHost::file_write(int handle, const std::string& text) {
@@ -153,28 +170,28 @@ std::string RealHost::input_line() {
 
 bool RealHost::dos_chdir(const std::string& path) {
   std::error_code ec;
-  std::filesystem::current_path(path, ec);
+  std::filesystem::current_path(native_path(path), ec);
   return !ec;
 }
 
 bool RealHost::dos_mkdir(const std::string& path) {
   std::error_code ec;
-  return std::filesystem::create_directory(path, ec);
+  return std::filesystem::create_directory(native_path(path), ec);
 }
 
 bool RealHost::dos_rmdir(const std::string& path) {
   std::error_code ec;
-  return std::filesystem::remove(path, ec);
+  return std::filesystem::remove(native_path(path), ec);
 }
 
 bool RealHost::dos_kill(const std::string& path) {
   std::error_code ec;
-  return std::filesystem::remove(path, ec);
+  return std::filesystem::remove(native_path(path), ec);
 }
 
 bool RealHost::dos_rename(const std::string& from, const std::string& to) {
   std::error_code ec;
-  std::filesystem::rename(from, to, ec);
+  std::filesystem::rename(native_path(from), native_path(to), ec);
   return !ec;
 }
 

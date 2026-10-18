@@ -2,6 +2,7 @@
 #include "e2e_util.h"
 
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -430,4 +431,80 @@ TEST(ext_then_return) {
       "100 IF 1 = 1 THEN RETURN\n110 PRINT \"NO\"\n120 RETURN");
   REQUIRE(r.ran);
   CHECK(r.output == "DONE\n");
+}
+
+TEST(ext_if_then_colon_is_conditional) {
+  // GW-BASIC: everything after THEN (including colons) is conditional.
+  auto r = e2e::run(
+      "10 K$ = \"2\"\n"
+      "20 IF K$ = \"1\" THEN GOSUB 100: GOTO 500\n"
+      "30 PRINT \"FELL THROUGH\"\n40 END\n"
+      "100 PRINT \"SUB\"\n110 RETURN\n"
+      "500 PRINT \"JUMPED\"\n510 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == "FELL THROUGH\n");
+}
+
+TEST(ext_if_then_gosub_runs) {
+  auto r = e2e::run(
+      "10 K$ = \"1\"\n"
+      "20 IF K$ = \"1\" THEN GOSUB 100: GOTO 500\n"
+      "30 PRINT \"FELL\"\n40 END\n"
+      "100 PRINT \"SUB\"\n110 RETURN\n"
+      "500 PRINT \"JUMPED\"\n510 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == "SUB\nJUMPED\n");
+}
+
+TEST(ext_print_using_numeric) {
+  auto r = e2e::run(
+      "10 PRINT USING \"###\"; 5\n"
+      "20 PRINT USING \"###\"; 42\n"
+      "30 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == "  5\n 42\n");
+}
+
+TEST(ext_print_using_string) {
+  auto r = e2e::run(
+      "10 PRINT USING \"\\      \\\"; \"AB\"\n"
+      "20 PRINT USING \"\\      \\\"; \"ABCDEFGH\"\n"
+      "30 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == "AB      \nABCDEFGH\n");
+}
+
+TEST(ext_eof_builtin) {
+  std::string path = "/tmp/lcbasic_eof_test.txt";
+  {
+    std::ofstream f(path);
+    f << "one\ntwo\n";
+  }
+  auto r = e2e::run(
+      "10 OPEN \"" + path + "\" FOR INPUT AS #1\n"
+      "20 IF EOF(1) THEN 60\n"
+      "30 LINE INPUT #1, L$\n"
+      "40 PRINT L$\n"
+      "50 GOTO 20\n"
+      "60 CLOSE #1\n"
+      "70 END");
+  std::remove(path.c_str());
+  REQUIRE(r.ran);
+  CHECK(r.output == "one\ntwo\n");
+}
+
+TEST(ext_dos_path_separators) {
+  std::string dir = "/tmp/lcbasic_path_test";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  {
+    std::ofstream f(dir + "/data.dat");
+    f << "hello\n";
+  }
+  auto r = e2e::run(
+      "10 OPEN \"/tmp/lcbasic_path_test\\data.dat\" FOR INPUT AS #1\n"
+      "20 LINE INPUT #1, A$\n30 PRINT A$\n40 CLOSE #1\n50 END");
+  std::filesystem::remove_all(dir);
+  REQUIRE(r.ran);
+  CHECK(r.output == "hello\n");
 }

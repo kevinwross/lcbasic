@@ -6,8 +6,101 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
+
+namespace {
+
+bool is_numeric_field_char(char c) {
+  return c == '#' || c == '.' || c == '+' || c == '-' || c == '$' || c == '*' ||
+         c == '^';
+}
+
+// Minimal GW-BASIC PRINT USING formatter. Supports numeric fields built from
+// '#', '.', '+', '-', '$', '*', and '\\ ... \\' string fields, with literal
+// text around them.
+std::string format_using(const std::string& fmt, const Value& v) {
+  if (v.is_string()) {
+    std::string s = v.as_string();
+    std::size_t a = fmt.find('\\');
+    if (a != std::string::npos) {
+      std::size_t b = fmt.find('\\', a + 1);
+      if (b != std::string::npos) {
+        std::size_t width = b - a + 1;  // backslashes count as 2 columns
+        std::string field = s.substr(0, width);
+        if (field.size() < width) field += std::string(width - field.size(), ' ');
+        return fmt.substr(0, a) + field + fmt.substr(b + 1);
+      }
+    }
+    // '!' = first character only; '&' = full string.
+    std::size_t bang = fmt.find('!');
+    if (bang != std::string::npos) {
+      std::string field = s.empty() ? std::string(" ") : s.substr(0, 1);
+      return fmt.substr(0, bang) + field + fmt.substr(bang + 1);
+    }
+    std::size_t amp = fmt.find('&');
+    if (amp != std::string::npos) {
+      return fmt.substr(0, amp) + s + fmt.substr(amp + 1);
+    }
+    return s;
+  }
+
+  // Numeric field: locate the run of numeric field characters.
+  std::size_t a = std::string::npos;
+  std::size_t b = std::string::npos;
+  for (std::size_t i = 0; i < fmt.size(); ++i) {
+    if (fmt[i] == '#' || fmt[i] == '.') {
+      a = i;
+      break;
+    }
+  }
+  if (a == std::string::npos) {
+    // No field; just append the default number representation.
+    std::ostringstream oss;
+    oss << v.as_double();
+    return fmt + oss.str();
+  }
+  while (a > 0 && (fmt[a - 1] == '$' || fmt[a - 1] == '+' ||
+                   fmt[a - 1] == '-' || fmt[a - 1] == '*')) {
+    --a;
+  }
+  b = a;
+  while (b + 1 < fmt.size() && is_numeric_field_char(fmt[b + 1])) {
+    ++b;
+  }
+  std::string field = fmt.substr(a, b - a + 1);
+
+  std::size_t dot = field.find('.');
+  int decimals = 0;
+  if (dot != std::string::npos) {
+    for (std::size_t i = dot + 1; i < field.size(); ++i) {
+      if (field[i] == '#') ++decimals;
+    }
+  }
+  double d = v.as_double();
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(decimals) << std::fabs(d);
+  std::string num = oss.str();
+
+  std::string body;
+  if (d < 0) {
+    body = "-";
+  } else if (field.find('+') != std::string::npos) {
+    body = "+";
+  }
+  if (field.find('$') != std::string::npos) body += "$";
+  body += num;
+
+  int width = static_cast<int>(field.size());
+  if (static_cast<int>(body.size()) < width) {
+    body = std::string(static_cast<std::size_t>(width) - body.size(), ' ') +
+           body;
+  }
+  return fmt.substr(0, a) + body + fmt.substr(b + 1);
+}
+
+}  // namespace
 
 Vm::Vm(Screen& screen, Host& host) : screen_(screen), host_(host) {}
 
@@ -289,6 +382,14 @@ Value Vm::call_builtin(Builtin b, const std::vector<Value>& args,
       }
       return Value(out);
     }
+    case Builtin::Eof: {
+      int filenum = static_cast<int>(num(0));
+      if (filenum < 1 || filenum > 255 || file_handles_[filenum] < 0) {
+        trap_error(52, line);
+        return Value(0.0);
+      }
+      return Value(host_.file_eof(file_handles_[filenum]) ? -1.0 : 0.0);
+    }
   }
   return Value{};
 }
@@ -436,9 +537,11 @@ ExecStatus Vm::step_one() {
 // The hook (if set) is consulted before each instruction.
 ExecStatus Vm::execute(bool single_step) {
   while (ip_ < code_.size()) {
-    // Fire due timer events at line boundaries.
+    // Fire due timer events at line boundaries and flush pending output so
+    // interactive programs (INKEY$ loops) update the screen.
     if (code_[ip_].line != last_line_) {
       last_line_ = code_[ip_].line;
+      screen_.refresh();
       if (check_events()) {
         continue;  // ip_ moved to the handler
       }
@@ -624,6 +727,12 @@ ExecStatus Vm::execute(bool single_step) {
           } else {
             screen_.print(format_basic_number(v.as_double()));
           }
+          break;
+        }
+        case OpCode::PrintUsing: {
+          std::string fmt = pop().as_string();
+          Value v = pop();
+          screen_.print(format_using(fmt, v));
           break;
         }
         case OpCode::Pop: {

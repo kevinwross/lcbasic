@@ -83,14 +83,31 @@ void Compiler::compile_statement(const Statement& stmt) {
       [&](auto&& s) {
         using T = std::decay_t<decltype(s)>;
         if constexpr (std::is_same_v<T, PrintStmt>) {
+          const bool using_fmt = static_cast<bool>(s.using_format);
+          if (using_fmt) {
+            // Evaluate the format string once and keep it in temp slot 2.
+            compile_expr(*s.using_format, line);
+            emit(OpCode::StoreTemp, line, 2);
+          }
           for (std::size_t i = 0; i < s.args.size(); ++i) {
             compile_expr(*s.args[i], line);
-            emit(OpCode::Print, line);
+            if (using_fmt) {
+              emit(OpCode::LoadTemp, line, 2);
+              emit(OpCode::PrintUsing, line);
+            } else {
+              emit(OpCode::Print, line);
+            }
             TokenType sep =
                 (i < s.separators.size()) ? s.separators[i] : TokenType::Eof;
             if (sep == TokenType::Comma) {
-              // Comma advances to the next 14-column print zone.
-              emit(OpCode::NextZone, line);
+              if (using_fmt) {
+                auto sp_idx = add_constant(Value(std::string(" ")));
+                emit(OpCode::Constant, line, sp_idx);
+                emit(OpCode::Print, line);
+              } else {
+                // Comma advances to the next 14-column print zone.
+                emit(OpCode::NextZone, line);
+              }
             }
             // Semicolon or none: no separator.
           }

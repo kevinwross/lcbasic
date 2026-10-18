@@ -21,6 +21,7 @@ enum class OpCode : std::uint8_t {
   IntDiv,                       // integer division
   Mod,                          // MOD
   Print,        // pop and print
+  PrintUsing,   // stack: value, format; pop both and print using format
   Pop,          // discard top of stack
   Jmp,          // jump to PC offset stored in operand
   JmpFalse,     // jump to PC if top of stack is zero

@@ -106,6 +106,14 @@ bool Parser::parse_statement() {
       } else {
         advance();  // consume PRINT or '?'
         PrintStmt print;
+        if (match(TokenType::KeywordUsing)) {
+          print.using_format = parse_expression();
+          if (!print.using_format) return false;
+          if (!match(TokenType::Semicolon) && !match(TokenType::Comma)) {
+            error_at_current("expected ';' after PRINT USING format");
+            return false;
+          }
+        }
         while (!is_at_end() && !check(TokenType::Newline) &&
                !check(TokenType::Colon)) {
           auto expr = parse_expression();
@@ -192,28 +200,47 @@ bool Parser::parse_statement() {
       consume(TokenType::KeywordThen, "expected THEN after IF condition");
       IfStmt if_stmt;
       if_stmt.condition = std::move(cond);
+
+      // GW-BASIC semantics: everything after THEN (including statements
+      // separated by colons) belongs to the THEN clause, up to ELSE or the
+      // end of the line. Likewise for the ELSE clause.
+      auto parse_clause = [&](std::vector<std::unique_ptr<Statement>>& out,
+                              bool stop_at_else) -> bool {
+        while (!is_at_end() && !check(TokenType::Newline)) {
+          if (stop_at_else && check(TokenType::KeywordElse)) break;
+          auto inner = parse_statement_no_line();
+          if (!inner) return false;
+          out.push_back(std::move(inner));
+          if (match(TokenType::Colon)) continue;
+          break;
+        }
+        return true;
+      };
+
       if (check(TokenType::Number)) {
         Token then_line_tok = advance();
         if_stmt.then_line = static_cast<std::int32_t>(then_line_tok.number);
+        // Statements after "THEN <line>:" are unreachable but still part of
+        // the conditional clause.
+        if (match(TokenType::Colon)) {
+          if (!parse_clause(if_stmt.then_stmts, true)) return false;
+        }
         if (match(TokenType::KeywordElse)) {
-          consume(TokenType::Number, "expected line number after ELSE");
-          if_stmt.else_line =
-              static_cast<std::int32_t>(tokens_[current_ - 1].number);
+          if (check(TokenType::Number)) {
+            Token else_line_tok = advance();
+            if_stmt.else_line =
+                static_cast<std::int32_t>(else_line_tok.number);
+            if (match(TokenType::Colon)) {
+              if (!parse_clause(if_stmt.else_stmts, false)) return false;
+            }
+          } else {
+            if (!parse_clause(if_stmt.else_stmts, false)) return false;
+          }
         }
       } else {
-        while (!is_at_end() && !check(TokenType::Newline) &&
-               !check(TokenType::Colon) && !check(TokenType::KeywordElse)) {
-          auto inner = parse_statement_no_line();
-          if (!inner) break;
-          if_stmt.then_stmts.push_back(std::move(inner));
-        }
+        if (!parse_clause(if_stmt.then_stmts, true)) return false;
         if (match(TokenType::KeywordElse)) {
-          while (!is_at_end() && !check(TokenType::Newline) &&
-                 !check(TokenType::Colon)) {
-            auto inner = parse_statement_no_line();
-            if (!inner) break;
-            if_stmt.else_stmts.push_back(std::move(inner));
-          }
+          if (!parse_clause(if_stmt.else_stmts, false)) return false;
         }
       }
       stmt.data = std::move(if_stmt);
@@ -974,6 +1001,14 @@ std::unique_ptr<Statement> Parser::parse_statement_no_line() {
     } else {
       match(TokenType::KeywordPrint);
       PrintStmt print;
+      if (match(TokenType::KeywordUsing)) {
+        print.using_format = parse_expression();
+        if (!print.using_format) return nullptr;
+        if (!match(TokenType::Semicolon) && !match(TokenType::Comma)) {
+          error_at_current("expected ';' after PRINT USING format");
+          return nullptr;
+        }
+      }
       while (!is_at_end() && !check(TokenType::Newline) &&
              !check(TokenType::Colon) && !check(TokenType::KeywordElse)) {
         auto expr = parse_expression();
@@ -1036,6 +1071,21 @@ std::unique_ptr<Statement> Parser::parse_statement_no_line() {
     stmt->data = std::move(g);
   } else if (match(TokenType::KeywordReturn)) {
     stmt->data = ReturnStmt{};
+  } else if (match(TokenType::KeywordGosub)) {
+    consume(TokenType::Number, "expected line number after GOSUB");
+    GosubStmt g;
+    g.target_line = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+    stmt->data = std::move(g);
+  } else if (match(TokenType::KeywordCls)) {
+    stmt->data = ClsStmt{};
+  } else if (match(TokenType::KeywordLocate)) {
+    LocateStmt l;
+    l.row = parse_expression();
+    if (!l.row) return nullptr;
+    consume(TokenType::Comma, "expected ',' in LOCATE");
+    l.col = parse_expression();
+    if (!l.col) return nullptr;
+    stmt->data = std::move(l);
   } else if (match(TokenType::KeywordOn)) {
     // ON expr GOTO/GOSUB line[, line...] inside a THEN clause.
     OnGotoStmt og;

@@ -52,6 +52,8 @@ struct Expr {
 
 struct PrintStmt {
   std::vector<std::unique_ptr<Expr>> args;
+  // Format string for `PRINT USING`; null for a normal PRINT.
+  std::unique_ptr<Expr> using_format;
   // Separator that follows each argument: Comma, Semicolon, or Eof (none).
   std::vector<TokenType> separators;
   bool trailing_separator = false;

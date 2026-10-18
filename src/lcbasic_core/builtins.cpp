@@ -53,6 +53,7 @@ const std::unordered_map<std::string, Builtin>& table() {
       {"DATE$", Builtin::Date},
       {"TIME$", Builtin::Time},
       {"INPUT$", Builtin::InputDollar},
+      {"EOF", Builtin::Eof},
   };
   return t;
 }

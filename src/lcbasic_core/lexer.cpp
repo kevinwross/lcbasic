@@ -8,6 +8,7 @@ namespace {
 
 const std::unordered_map<std::string_view, TokenType> kKeywords = {
     {"PRINT", TokenType::KeywordPrint},
+    {"USING", TokenType::KeywordUsing},
     {"LET", TokenType::KeywordLet},
     {"IF", TokenType::KeywordIf},
     {"THEN", TokenType::KeywordThen},

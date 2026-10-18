@@ -14,6 +14,7 @@ enum class TokenType {
 
   // Keywords
   KeywordPrint,
+  KeywordUsing,
   KeywordLet,
   KeywordIf,
   KeywordThen,
