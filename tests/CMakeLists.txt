@@ -6,6 +6,7 @@ add_executable(lcbasic_tests
   test_fstok.cpp
   test_debugger.cpp
   test_dap.cpp
+  test_bugs.cpp
 )
 
 if(HAVE_CURSES)

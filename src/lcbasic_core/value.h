@@ -117,6 +117,12 @@ inline std::string strip_var_suffix(const std::string& name) {
   return name;
 }
 
+// Default value for an uninitialised variable/array element of a type.
+inline Value default_value(VarType t) {
+  if (t == VarType::VT_STR) return Value(std::string(""));
+  return Value(0.0);
+}
+
 // In-memory variable store with type enforcement.
 class VariableStore {
 public:
@@ -155,11 +161,17 @@ public:
   void dim(const std::string& name, std::int32_t option_base,
            const std::vector<std::int32_t>& upper_bounds, VarType type);
 
+  // Bounds-checked element access. Throws std::out_of_range on a bad
+  // subscript or wrong number of dimensions.
   Value& at(const std::string& name,
             const std::vector<std::int32_t>& indices);
   const Value& at(const std::string& name,
                   const std::vector<std::int32_t>& indices) const;
   bool contains(const std::string& name) const;
+  VarType type_of(const std::string& name) const;
+  std::size_t dimensions(const std::string& name) const;
+  void erase(const std::string& name);
+  void clear() { arrays_.clear(); }
 
 private:
   std::size_t offset(const ArrayInfo& info,

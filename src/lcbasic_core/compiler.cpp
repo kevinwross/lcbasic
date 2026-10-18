@@ -189,12 +189,16 @@ void Compiler::compile_statement(const Statement& stmt) {
         } else if constexpr (std::is_same_v<T, ReadStmt>) {
           for (const auto& target : s.targets) {
             if (target.is_array) {
-              // Compile index expressions
+              // Compile index expressions onto the stack.
               for (auto& idx : target.indices) {
                 compile_expr(*idx, line);
               }
               std::uint8_t vidx = variable_index(target.name);
-              emit(OpCode::ReadArray, line, vidx);
+              std::uint8_t num_indices =
+                  static_cast<std::uint8_t>(target.indices.size());
+              std::uint32_t operand =
+                  (static_cast<std::uint32_t>(num_indices) << 8) | vidx;
+              emit(OpCode::ReadArray, line, operand);
             } else {
               std::uint8_t vidx = variable_index(target.name);
               emit(OpCode::ReadVar, line, vidx);

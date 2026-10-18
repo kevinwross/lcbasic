@@ -36,6 +36,46 @@ VarType Vm::var_type(std::uint8_t idx) const {
   return VarType::VT_DBL;
 }
 
+int Vm::compare_values(const Value& a, const Value& b, std::int32_t line) {
+  if (a.is_string() != b.is_string()) trap_error(13, line);  // Type mismatch
+  if (a.is_string()) {
+    int c = a.as_string().compare(b.as_string());
+    return (c < 0) ? -1 : (c > 0 ? 1 : 0);
+  }
+  double x = a.as_double(), y = b.as_double();
+  return (x < y) ? -1 : (x > y ? 1 : 0);
+}
+
+Value Vm::coerce_value(const Value& v, VarType t, std::int32_t line) {
+  if (t == VarType::VT_STR) {
+    if (!v.is_string()) trap_error(13, line);  // Type mismatch
+    return v;
+  }
+  if (v.is_string()) trap_error(13, line);     // Type mismatch
+  double d = v.as_double();
+  switch (t) {
+    case VarType::VT_INT16: {
+      double r = std::round(d);
+      if (r < -32768.0 || r > 32767.0) trap_error(6, line);  // Overflow
+      return Value(static_cast<Int16>(r));
+    }
+    case VarType::VT_INT32: {
+      double r = std::round(d);
+      if (r < -2147483648.0 || r > 2147483647.0) trap_error(6, line);
+      return Value(static_cast<Int32>(r));
+    }
+    case VarType::VT_SGL: {
+      float f = static_cast<float>(d);
+      if (std::isinf(f)) trap_error(6, line);  // Overflow
+      return Value(f);
+    }
+    case VarType::VT_DBL:
+      return Value(d);
+    default:
+      return v;
+  }
+}
+
 std::int32_t Vm::current_line() const {
   if (ip_ < code_.size()) return code_[ip_].line;
   if (!code_.empty()) return code_.back().line;
@@ -100,6 +140,7 @@ void Vm::load(const std::vector<Instruction>& code,
     if (idx > max_idx) max_idx = idx;
   }
   var_values_.assign(max_idx + 1, Value{});
+  var_init_.assign(max_idx + 1, false);
   variable_names_ = variable_names;
 
   file_handles_.assign(256, -1);
@@ -184,6 +225,9 @@ ExecStatus Vm::execute(bool single_step) {
             push(Value(static_cast<double>(err_code_)));
           } else if (name == "ERL") {
             push(Value(static_cast<double>(erl_line_)));
+          } else if (!var_init_[inst.operand]) {
+            // Uninitialised: empty string for string vars, zero otherwise.
+            push(default_value(var_type(inst.operand)));
           } else {
             push(var_values_[inst.operand]);
           }
@@ -201,18 +245,21 @@ ExecStatus Vm::execute(bool single_step) {
           } else if (name == "ERL") {
             erl_line_ = static_cast<std::int32_t>(v.as_double());
           } else {
-            var_values_[inst.operand] = v.coerce(var_type(inst.operand));
+            var_values_[inst.operand] =
+                coerce_value(v, var_type(inst.operand), current_line);
+            var_init_[inst.operand] = true;
           }
           break;
         }
         case OpCode::Add: {
           Value b = pop();
           Value a = pop();
-          // String + string concatenates; otherwise numeric addition.
-          if (a.is_string() || b.is_string()) {
+          if (a.is_string() && b.is_string()) {
             push(Value(a.as_string() + b.as_string()));
-          } else {
+          } else if (!a.is_string() && !b.is_string()) {
             push(Value(a.as_double() + b.as_double()));
+          } else {
+            trap_error(13, current_line);  // Type mismatch
           }
           break;
         }
@@ -231,43 +278,47 @@ ExecStatus Vm::execute(bool single_step) {
         case OpCode::Div: {
           Value b = pop();
           Value a = pop();
+          if (b.as_double() == 0.0) {
+            trap_error(11, current_line);  // Division by zero
+            break;
+          }
           push(Value(a.as_double() / b.as_double()));
           break;
         }
         case OpCode::Eq: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() == b.as_double() ? -1.0 : 0.0));
+          push(Value(compare_values(a, b, current_line) == 0 ? -1.0 : 0.0));
           break;
         }
         case OpCode::Ne: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() != b.as_double() ? -1.0 : 0.0));
+          push(Value(compare_values(a, b, current_line) != 0 ? -1.0 : 0.0));
           break;
         }
         case OpCode::Lt: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() < b.as_double() ? -1.0 : 0.0));
+          push(Value(compare_values(a, b, current_line) < 0 ? -1.0 : 0.0));
           break;
         }
         case OpCode::Le: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() <= b.as_double() ? -1.0 : 0.0));
+          push(Value(compare_values(a, b, current_line) <= 0 ? -1.0 : 0.0));
           break;
         }
         case OpCode::Gt: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() > b.as_double() ? -1.0 : 0.0));
+          push(Value(compare_values(a, b, current_line) > 0 ? -1.0 : 0.0));
           break;
         }
         case OpCode::Ge: {
           Value b = pop();
           Value a = pop();
-          push(Value(a.as_double() >= b.as_double() ? -1.0 : 0.0));
+          push(Value(compare_values(a, b, current_line) >= 0 ? -1.0 : 0.0));
           break;
         }
         case OpCode::Print: {
@@ -332,7 +383,10 @@ ExecStatus Vm::execute(bool single_step) {
           ForFrame& frame = for_stack_.back();
           double var_val = var_values_[frame.var_index].as_double();
           var_val += frame.step;
-          var_values_[frame.var_index] = Value(var_val);
+          var_values_[frame.var_index] =
+              coerce_value(Value(var_val), var_type(frame.var_index),
+                           current_line);
+          var_init_[frame.var_index] = true;
           bool cont;
           if (frame.step > 0.0) {
             cont = var_val <= frame.limit;
@@ -376,8 +430,8 @@ ExecStatus Vm::execute(bool single_step) {
           std::reverse(indices.begin(), indices.end());
           try {
             push(arrays_.at(var_name(vidx), indices));
-          } catch (const std::exception&) {
-            trap_error(5, current_line);
+          } catch (const std::out_of_range&) {
+            trap_error(9, current_line);  // Subscript out of range
           }
           break;
         }
@@ -393,20 +447,40 @@ ExecStatus Vm::execute(bool single_step) {
           }
           std::reverse(indices.begin(), indices.end());
           try {
-            arrays_.at(var_name(vidx), indices) = val;
-          } catch (const std::exception&) {
-            trap_error(5, current_line);
+            std::string name = var_name(vidx);
+            // Coerce to the array's element type (Type mismatch / Overflow).
+            val = coerce_value(val, arrays_.type_of(name), current_line);
+            arrays_.at(name, indices) = val;
+          } catch (const std::out_of_range&) {
+            trap_error(9, current_line);  // Subscript out of range
           }
           break;
         }
         case OpCode::ReadVar: {
           std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand);
           Value v = data_pool_.read();
-          var_values_[vidx] = v.coerce(var_type(vidx));
+          var_values_[vidx] = coerce_value(v, var_type(vidx), current_line);
+          var_init_[vidx] = true;
           break;
         }
         case OpCode::ReadArray: {
-          trap_error(5, current_line);
+          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand & 0xFF);
+          std::uint8_t num_indices =
+              static_cast<std::uint8_t>((inst.operand >> 8) & 0xFF);
+          std::vector<std::int32_t> indices;
+          indices.reserve(num_indices);
+          for (std::uint8_t i = 0; i < num_indices; ++i) {
+            indices.push_back(static_cast<std::int32_t>(pop().as_double()));
+          }
+          std::reverse(indices.begin(), indices.end());
+          try {
+            std::string name = var_name(vidx);
+            Value v = data_pool_.read();
+            v = coerce_value(v, arrays_.type_of(name), current_line);
+            arrays_.at(name, indices) = v;
+          } catch (const std::out_of_range&) {
+            trap_error(9, current_line);
+          }
           break;
         }
         case OpCode::Restore: {
@@ -579,7 +653,22 @@ ExecStatus Vm::execute(bool single_step) {
             trap_error(5, current_line);
             break;
           }
-          var_values_[vidx] = Value(line_text).coerce(var_type(vidx));
+          // A string variable reads the whole line; a numeric variable
+          // parses a number from it.
+          Value incoming;
+          if (var_type(vidx) == VarType::VT_STR) {
+            incoming = Value(line_text);
+          } else {
+            try {
+              incoming = Value(std::stod(line_text));
+            } catch (...) {
+              trap_error(13, current_line);  // Type mismatch
+              break;
+            }
+          }
+          var_values_[vidx] = coerce_value(incoming, var_type(vidx),
+                                           current_line);
+          var_init_[vidx] = true;
           break;
         }
         case OpCode::Eof: {
@@ -645,7 +734,12 @@ ExecStatus Vm::execute(bool single_step) {
 std::optional<Value> Vm::get_variable(const std::string& name) const {
   for (std::size_t i = 0; i < variable_names_.size(); i++) {
     if (variable_names_[i] == name) {
-      if (i < var_values_.size()) return var_values_[i];
+      if (i < var_values_.size()) {
+        if (i >= var_init_.size() || !var_init_[i]) {
+          return default_value(var_type(static_cast<std::uint8_t>(i)));
+        }
+        return var_values_[i];
+      }
       return Value{};
     }
   }
@@ -656,7 +750,9 @@ bool Vm::set_variable(const std::string& name, const Value& v) {
   for (std::size_t i = 0; i < variable_names_.size(); i++) {
     if (variable_names_[i] == name) {
       if (i < var_values_.size()) {
-        var_values_[i] = v.coerce(var_type(static_cast<std::uint8_t>(i)));
+        var_values_[i] = coerce_value(
+            v, var_type(static_cast<std::uint8_t>(i)), current_line());
+        var_init_[i] = true;
         return true;
       }
     }
@@ -668,6 +764,7 @@ Vm::Snapshot Vm::snapshot() const {
   Snapshot s;
   s.ip = ip_;
   s.var_values = var_values_;
+  s.var_init = var_init_;
   s.stack = stack_;
   s.call_stack = call_stack_;
   s.data_ptr = 0;  // DataPool pointer is internal; snapshot captures values.
@@ -677,6 +774,7 @@ Vm::Snapshot Vm::snapshot() const {
 void Vm::restore(const Snapshot& s) {
   ip_ = s.ip;
   var_values_ = s.var_values;
+  var_init_ = s.var_init;
   stack_ = s.stack;
   call_stack_ = s.call_stack;
 }

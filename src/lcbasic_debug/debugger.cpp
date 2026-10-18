@@ -273,13 +273,13 @@ bool Debugger::on_instruction(std::size_t /*pc*/, std::int32_t line,
 std::vector<VariableView> Debugger::variables() const {
   std::vector<VariableView> out;
   const auto& names = vm_.variable_names();
-  const auto& values = vm_.var_values();
-  for (std::size_t i = 0; i < names.size() && i < values.size(); i++) {
+  for (std::size_t i = 0; i < names.size(); i++) {
+    auto opt = vm_.get_variable(names[i]);
+    Value val = opt ? *opt : Value{};
     VariableView v;
     v.name = names[i];
-    v.type = var_type_name(values[i].is_string() ? VarType::VT_STR
-                                                  : VarType::VT_DBL);
-    v.value = format_value(values[i]);
+    v.type = var_type_name(val.is_string() ? VarType::VT_STR : VarType::VT_DBL);
+    v.value = format_value(val);
     out.push_back(std::move(v));
   }
   return out;

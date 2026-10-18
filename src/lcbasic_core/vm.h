@@ -94,6 +94,7 @@ public:
   struct Snapshot {
     std::size_t ip;
     std::vector<Value> var_values;
+    std::vector<bool> var_init;
     std::vector<Value> stack;
     std::vector<std::size_t> call_stack;
     std::vector<Value> data_values_seen;
@@ -114,6 +115,7 @@ private:
   std::vector<LineEntry> line_table_;
 
   std::vector<Value> var_values_;          // indexed by variable index
+  std::vector<bool> var_init_;             // whether each variable is assigned
   ArrayStore arrays_;                      // DIM'd arrays
   DataPool data_pool_;                     // DATA pool
   std::int32_t option_base_ = 0;           // OPTION BASE setting
@@ -161,6 +163,11 @@ private:
   void push(Value v);
   std::string var_name(std::uint8_t idx) const;
   VarType var_type(std::uint8_t idx) const;
+  // Coerce a value to a variable/array element type, raising Type mismatch
+  // (13) or Overflow (6) as GW-BASIC would.
+  Value coerce_value(const Value& v, VarType t, std::int32_t line);
+  // Compare two values (-1/0/1), raising Type mismatch for mixed types.
+  int compare_values(const Value& a, const Value& b, std::int32_t line);
   int file_handle_for(std::uint8_t filenum_idx);
   std::optional<std::size_t> find_pc_for_line(std::int32_t line) const;
   [[noreturn]] void trap_error(int error_code, std::int32_t line);
