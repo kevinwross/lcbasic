@@ -28,6 +28,10 @@ struct BinaryExpr {
   TokenType op;
   std::unique_ptr<Expr> right;
 };
+struct UnaryExpr {
+  TokenType op;
+  std::unique_ptr<Expr> operand;
+};
 struct FnCallExpr {
   std::string name;
   std::vector<std::unique_ptr<Expr>> args;
@@ -40,7 +44,7 @@ struct FunctionExpr {
 
 struct Expr {
   std::variant<NumberExpr, StringExpr, VariableExpr, ArrayRefExpr,
-               BinaryExpr, FnCallExpr, BuiltinExpr, FunctionExpr>
+               BinaryExpr, UnaryExpr, FnCallExpr, BuiltinExpr, FunctionExpr>
       data;
 };
 
@@ -108,8 +112,9 @@ struct DefFnStmt {
 
 struct OpenStmt {
   std::int32_t filenum;
-  std::string mode;   // "I", "O", "A"
+  std::string mode;   // "I", "O", "A", "R", "B"
   std::unique_ptr<Expr> filename;
+  std::unique_ptr<Expr> record_len;  // optional LEN= for RANDOM
 };
 
 struct CloseStmt { std::int32_t filenum; };
@@ -166,10 +171,10 @@ struct EventControlStmt {
   int action = 0;  // 0 = ON, 1 = OFF, 2 = STOP
 };
 
-// Keyboard input: INPUT [prompt;] var[, var...] / LINE INPUT [prompt;] var$
+// Keyboard input: INPUT [prompt;] var[(indices)][, ...] / LINE INPUT ...
 struct InputStmt {
   std::unique_ptr<Expr> prompt;   // may be null
-  std::vector<std::string> vars;  // scalar variables
+  std::vector<ReadTarget> targets;
   bool line_input = false;
 };
 
@@ -218,6 +223,22 @@ struct MidAssignStmt {
 // A parsed-but-unimplemented statement (graphics/sound/etc.).
 struct StubStmt { std::string name; };
 
+// Random-access files.
+struct FieldStmt {
+  std::int32_t filenum;
+  std::vector<std::pair<std::unique_ptr<Expr>, std::string>> fields;
+};
+struct LSetStmt {
+  std::string var;
+  bool right = false;   // false = LSET, true = RSET
+  std::unique_ptr<Expr> value;
+};
+struct GetPutStmt {
+  std::int32_t filenum;
+  std::unique_ptr<Expr> record;  // may be null
+  bool put = false;
+};
+
 struct Statement {
   std::int32_t line_number;
   std::variant<PrintStmt, LetStmt, GotoStmt, IfStmt, ForStmt, NextStmt,
@@ -229,7 +250,8 @@ struct Statement {
                OnEventStmt, EventControlStmt, InputStmt, WhileStmt,
                WendStmt, OnGotoStmt, ClsStmt, LocateStmt, ColorStmt,
                ScreenStmt, WidthStmt, SwapStmt, EraseStmt, ClearStmt,
-               ErrorStmt, MidAssignStmt, StubStmt>
+               ErrorStmt, MidAssignStmt, StubStmt, FieldStmt, LSetStmt,
+               GetPutStmt>
       data;
 };
 
@@ -265,10 +287,16 @@ private:
   // Grammar
   bool parse_statement();
   std::unique_ptr<Statement> parse_statement_no_line();
-  std::unique_ptr<Expr> parse_expression();   // relational (lowest)
+  std::unique_ptr<Expr> parse_expression();   // precedence entry point
+  std::unique_ptr<Expr> parse_imp();          // IMP (lowest)
+  std::unique_ptr<Expr> parse_eqv();          // EQV
+  std::unique_ptr<Expr> parse_xor();          // XOR
+  std::unique_ptr<Expr> parse_or();           // OR
+  std::unique_ptr<Expr> parse_and();          // AND
+  std::unique_ptr<Expr> parse_not();          // NOT
   std::unique_ptr<Expr> parse_relational();   // =, <>, <, <=, >, >=
   std::unique_ptr<Expr> parse_additive();     // + -
   std::unique_ptr<Expr> parse_multiplicative(); // * /
-  std::unique_ptr<Expr> parse_unary();        // NOT, -
-  std::unique_ptr<Expr> parse_primary();      // number, string, var, array, (expr)
+  std::unique_ptr<Expr> parse_unary();        // unary -
+  std::unique_ptr<Expr> parse_primary();      // number, string, var, array, fn
 };

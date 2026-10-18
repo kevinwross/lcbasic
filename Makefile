@@ -7,19 +7,17 @@ CXXFLAGS := -std=c++20 -Wall -Wextra -Wpedantic -g -O0
 LDFLAGS := -lncurses
 
 INCLUDES := -Isrc/lcbasic_core -Isrc/lcbasic_screen \
-            -Isrc/lcbasic_fstok -Isrc/lcbasic_debug -Isrc/lcbasic_dap
+            -Isrc/lcbasic_debug -Isrc/lcbasic_dap
 
 CORE_SRC := src/lcbasic_core/value.cpp \
             src/lcbasic_core/host.cpp \
             src/lcbasic_core/number_format.cpp \
             src/lcbasic_core/builtins.cpp \
+            src/lcbasic_core/program_loader.cpp \
             src/lcbasic_core/lexer.cpp \
             src/lcbasic_core/parser.cpp \
             src/lcbasic_core/compiler.cpp \
             src/lcbasic_core/vm.cpp
-
-FSTOK_SRC := src/lcbasic_fstok/tokenizer.cpp \
-             src/lcbasic_fstok/basic_format.cpp
 
 SCREEN_SRC := src/lcbasic_screen/headless_screen.cpp \
               src/lcbasic_screen/stdout_screen.cpp \
@@ -34,14 +32,14 @@ TEST_SRC := tests/test_main.cpp \
             tests/test_lexer.cpp \
             tests/test_headless.cpp \
             tests/test_e2e.cpp \
-            tests/test_fstok.cpp \
             tests/test_debugger.cpp \
             tests/test_dap.cpp \
             tests/test_bugs.cpp \
             tests/test_statements.cpp \
-            tests/test_functions.cpp
+            tests/test_functions.cpp \
+            tests/test_operators.cpp
 
-LIB_SRC := $(CORE_SRC) $(FSTOK_SRC) $(SCREEN_SRC) $(DEBUG_SRC) $(DAP_SRC)
+LIB_SRC := $(CORE_SRC) $(SCREEN_SRC) $(DEBUG_SRC) $(DAP_SRC)
 
 OUT := build-make
 

@@ -37,6 +37,13 @@ public:
   virtual bool dos_rename(const std::string& from, const std::string& to) = 0;
   virtual std::vector<std::string> dos_files(const std::string& pattern) = 0;
   virtual int dos_shell(const std::string& command) = 0;
+
+  // ----- Random-access files -----
+  virtual int random_open(const std::string& filename) = 0;
+  virtual void random_close(int handle) = 0;
+  virtual std::string random_read(int handle, long record, int record_len) = 0;
+  virtual void random_write(int handle, long record, int record_len,
+                            const std::string& data) = 0;
 };
 
 // Real Host implementation backed by the OS filesystem.
@@ -59,6 +66,12 @@ public:
   bool dos_rename(const std::string& from, const std::string& to) override;
   std::vector<std::string> dos_files(const std::string& pattern) override;
   int dos_shell(const std::string& command) override;
+
+  int random_open(const std::string& filename) override;
+  void random_close(int handle) override;
+  std::string random_read(int handle, long record, int record_len) override;
+  void random_write(int handle, long record, int record_len,
+                    const std::string& data) override;
 
 private:
   struct FileEntry {

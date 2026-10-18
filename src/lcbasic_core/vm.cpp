@@ -509,6 +509,54 @@ ExecStatus Vm::execute(bool single_step) {
           push(Value(compare_values(a, b, current_line) >= 0 ? -1.0 : 0.0));
           break;
         }
+        case OpCode::And: {
+          Value b = pop();
+          Value a = pop();
+          Int16 x = static_cast<Int16>(std::round(a.as_double()));
+          Int16 y = static_cast<Int16>(std::round(b.as_double()));
+          push(Value(static_cast<double>(static_cast<Int16>(x & y))));
+          break;
+        }
+        case OpCode::Or: {
+          Value b = pop();
+          Value a = pop();
+          Int16 x = static_cast<Int16>(std::round(a.as_double()));
+          Int16 y = static_cast<Int16>(std::round(b.as_double()));
+          push(Value(static_cast<double>(static_cast<Int16>(x | y))));
+          break;
+        }
+        case OpCode::Xor: {
+          Value b = pop();
+          Value a = pop();
+          Int16 x = static_cast<Int16>(std::round(a.as_double()));
+          Int16 y = static_cast<Int16>(std::round(b.as_double()));
+          push(Value(static_cast<double>(static_cast<Int16>(x ^ y))));
+          break;
+        }
+        case OpCode::Eqv: {
+          Value b = pop();
+          Value a = pop();
+          Int16 x = static_cast<Int16>(std::round(a.as_double()));
+          Int16 y = static_cast<Int16>(std::round(b.as_double()));
+          push(Value(static_cast<double>(
+              static_cast<Int16>(~(x ^ y)))));
+          break;
+        }
+        case OpCode::Imp: {
+          Value b = pop();
+          Value a = pop();
+          Int16 x = static_cast<Int16>(std::round(a.as_double()));
+          Int16 y = static_cast<Int16>(std::round(b.as_double()));
+          push(Value(static_cast<double>(
+              static_cast<Int16>((~x) | y))));
+          break;
+        }
+        case OpCode::Not: {
+          Value a = pop();
+          Int16 x = static_cast<Int16>(std::round(a.as_double()));
+          push(Value(static_cast<double>(static_cast<Int16>(~x))));
+          break;
+        }
         case OpCode::Print: {
           Value v = pop();
           if (v.is_string()) {
@@ -804,6 +852,15 @@ ExecStatus Vm::execute(bool single_step) {
         case OpCode::Close: {
           double fn_d = pop().as_double();
           int filenum = static_cast<int>(fn_d);
+          // Close a random-access file if that's what this number refers to.
+          auto rit = random_files_.find(filenum);
+          if (rit != random_files_.end()) {
+            if (rit->second.handle >= 0) {
+              host_.random_close(rit->second.handle);
+            }
+            random_files_.erase(rit);
+            break;
+          }
           if (filenum < 1 || filenum > 255 || file_handles_[filenum] < 0) {
             trap_error(52, current_line);
             break;
@@ -898,10 +955,26 @@ ExecStatus Vm::execute(bool single_step) {
         case OpCode::Input: {
           int count = static_cast<int>(inst.operand & 0xFF);
           bool line_input = (inst.operand & 0x100) != 0;
-          std::vector<std::uint8_t> vars(count);
+
+          struct Target {
+            std::uint8_t vidx;
+            bool is_array;
+            std::vector<std::int32_t> indices;
+          };
+          std::vector<Target> targets(static_cast<std::size_t>(count));
           for (int i = count - 1; i >= 0; --i) {
-            vars[i] = static_cast<std::uint8_t>(pop().as_double());
+            std::uint8_t vidx = static_cast<std::uint8_t>(pop().as_double());
+            int n = static_cast<int>(std::round(pop().as_double()));
+            std::vector<std::int32_t> indices;
+            for (int k = 0; k < n; k++) {
+              indices.push_back(
+                  static_cast<std::int32_t>(std::round(pop().as_double())));
+            }
+            std::reverse(indices.begin(), indices.end());
+            targets[static_cast<std::size_t>(i)] =
+                Target{vidx, n > 0, std::move(indices)};
           }
+
           std::string prompt = pop().as_string();
           if (!prompt.empty()) {
             screen_.print(prompt);
@@ -909,23 +982,6 @@ ExecStatus Vm::execute(bool single_step) {
             screen_.print("? ");
           }
           screen_.refresh();
-          std::string line = host_.input_line();
-
-          std::vector<std::string> items;
-          if (line_input) {
-            items.push_back(line);
-          } else {
-            std::string cur;
-            for (char c : line) {
-              if (c == ',') {
-                items.push_back(cur);
-                cur.clear();
-              } else {
-                cur += c;
-              }
-            }
-            items.push_back(cur);
-          }
 
           auto trim = [](std::string s) {
             std::size_t a = s.find_first_not_of(" \t");
@@ -934,29 +990,79 @@ ExecStatus Vm::execute(bool single_step) {
             return s.substr(a, b - a + 1);
           };
 
-          for (int i = 0; i < count; i++) {
-            std::string item =
-                (i < static_cast<int>(items.size())) ? items[i] : "";
-            item = trim(item);
-            std::uint8_t vidx = vars[i];
-            Value incoming;
-            if (var_type(vidx) == VarType::VT_STR) {
-              if (item.size() >= 2 && item.front() == '"' &&
-                  item.back() == '"') {
-                item = item.substr(1, item.size() - 2);
-              }
-              incoming = Value(item);
+          int attempts = 0;
+          for (;;) {
+            std::string line = host_.input_line();
+            std::vector<std::string> items;
+            if (line_input) {
+              items.push_back(line);
             } else {
-              try {
-                incoming = Value(std::stod(item));
-              } catch (...) {
+              std::string cur;
+              for (char c : line) {
+                if (c == ',') {
+                  items.push_back(cur);
+                  cur.clear();
+                } else {
+                  cur += c;
+                }
+              }
+              items.push_back(cur);
+            }
+
+            std::vector<Value> parsed(static_cast<std::size_t>(count));
+            bool ok = true;
+            for (int i = 0; i < count; i++) {
+              std::string item =
+                  (i < static_cast<int>(items.size())) ? trim(items[i]) : "";
+              const Target& t = targets[static_cast<std::size_t>(i)];
+              VarType vt = t.is_array ? arrays_.type_of(var_name(t.vidx))
+                                      : var_type(t.vidx);
+              if (vt == VarType::VT_STR) {
+                if (item.size() >= 2 && item.front() == '"' &&
+                    item.back() == '"') {
+                  item = item.substr(1, item.size() - 2);
+                }
+                parsed[static_cast<std::size_t>(i)] = Value(item);
+              } else {
+                try {
+                  parsed[static_cast<std::size_t>(i)] =
+                      Value(std::stod(item));
+                } catch (...) {
+                  ok = false;
+                  break;
+                }
+              }
+            }
+
+            if (!ok) {
+              if (++attempts >= 5) {
                 trap_error(13, current_line);  // Type mismatch
                 break;
               }
+              screen_.print("?Redo from start\n");
+              screen_.refresh();
+              continue;
             }
-            var_values_[vidx] =
-                coerce_value(incoming, var_type(vidx), current_line);
-            var_init_[vidx] = true;
+
+            for (int i = 0; i < count; i++) {
+              const Target& t = targets[static_cast<std::size_t>(i)];
+              if (t.is_array) {
+                try {
+                  VarType vt = arrays_.type_of(var_name(t.vidx));
+                  Value v = coerce_value(parsed[static_cast<std::size_t>(i)],
+                                         vt, current_line);
+                  arrays_.at(var_name(t.vidx), t.indices) = v;
+                } catch (const std::out_of_range&) {
+                  trap_error(9, current_line);
+                }
+              } else {
+                var_values_[t.vidx] =
+                    coerce_value(parsed[static_cast<std::size_t>(i)],
+                                 var_type(t.vidx), current_line);
+                var_init_[t.vidx] = true;
+              }
+            }
+            break;
           }
           break;
         }
@@ -1032,6 +1138,140 @@ ExecStatus Vm::execute(bool single_step) {
           push(call_builtin(b, args, current_line));
           break;
         }
+        case OpCode::RandomOpen: {
+          int record_len = static_cast<int>(std::round(pop().as_double()));
+          std::string filename = pop().as_string();
+          int filenum = static_cast<int>(inst.operand);
+          if (record_len <= 0) record_len = 128;
+          auto it = random_files_.find(filenum);
+          if (it != random_files_.end()) {
+            if (it->second.handle >= 0) host_.random_close(it->second.handle);
+            random_files_.erase(it);
+          }
+          int handle = host_.random_open(filename);
+          if (handle < 0) {
+            trap_error(52, current_line);
+            break;
+          }
+          RandomFile rf;
+          rf.handle = handle;
+          rf.record_len = record_len;
+          rf.buffer.assign(static_cast<std::size_t>(record_len), ' ');
+          random_files_[filenum] = std::move(rf);
+          break;
+        }
+        case OpCode::Field: {
+          std::uint8_t vidx = static_cast<std::uint8_t>(pop().as_double());
+          int len = static_cast<int>(std::round(pop().as_double()));
+          int filenum = static_cast<int>(inst.operand);
+          auto it = random_files_.find(filenum);
+          if (it == random_files_.end()) {
+            trap_error(52, current_line);
+            break;
+          }
+          if (len < 0) len = 0;
+          RandomField f{vidx, it->second.next_offset, len};
+          it->second.fields.push_back(f);
+          it->second.next_offset += len;
+          if (static_cast<int>(it->second.buffer.size()) <
+              it->second.next_offset) {
+            it->second.buffer.resize(
+                static_cast<std::size_t>(it->second.next_offset), ' ');
+          }
+          break;
+        }
+        case OpCode::LSet: {
+          Value val = pop();
+          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand >> 1);
+          bool right = (inst.operand & 1u) != 0;
+          std::string s = val.as_string();
+          RandomFile* rf = nullptr;
+          RandomField* field = nullptr;
+          for (auto& [fn, file] : random_files_) {
+            for (auto& f : file.fields) {
+              if (f.var_index == vidx) {
+                rf = &file;
+                field = &f;
+                break;
+              }
+            }
+            if (field) break;
+          }
+          if (field) {
+            int len = field->length;
+            if (static_cast<int>(s.size()) > len) {
+              s = s.substr(0, static_cast<std::size_t>(len));
+            }
+            std::string padded(static_cast<std::size_t>(len), ' ');
+            std::size_t start =
+                right ? static_cast<std::size_t>(len - s.size()) : 0;
+            padded.replace(start, s.size(), s);
+            rf->buffer.replace(static_cast<std::size_t>(field->offset),
+                               static_cast<std::size_t>(len), padded);
+            var_values_[vidx] = Value(padded);
+          } else {
+            std::string cur =
+                (var_init_[vidx]) ? var_values_[vidx].as_string() : s;
+            int len = static_cast<int>(cur.size());
+            if (static_cast<int>(s.size()) > len) {
+              s = s.substr(0, static_cast<std::size_t>(len));
+            }
+            std::string padded(static_cast<std::size_t>(len), ' ');
+            std::size_t start =
+                right ? static_cast<std::size_t>(len - s.size()) : 0;
+            padded.replace(start, s.size(), s);
+            var_values_[vidx] = Value(padded);
+          }
+          var_init_[vidx] = true;
+          break;
+        }
+        case OpCode::GetRecord: {
+          int rec = static_cast<int>(std::round(pop().as_double()));
+          int filenum = static_cast<int>(inst.operand);
+          auto it = random_files_.find(filenum);
+          if (it == random_files_.end()) {
+            trap_error(52, current_line);
+            break;
+          }
+          if (rec < 1) rec = 1;
+          it->second.buffer = host_.random_read(
+              it->second.handle, rec, it->second.record_len);
+          for (auto& f : it->second.fields) {
+            std::string s = it->second.buffer.substr(
+                static_cast<std::size_t>(f.offset),
+                static_cast<std::size_t>(f.length));
+            var_values_[f.var_index] = Value(s);
+            var_init_[f.var_index] = true;
+          }
+          break;
+        }
+        case OpCode::PutRecord: {
+          int rec = static_cast<int>(std::round(pop().as_double()));
+          int filenum = static_cast<int>(inst.operand);
+          auto it = random_files_.find(filenum);
+          if (it == random_files_.end()) {
+            trap_error(52, current_line);
+            break;
+          }
+          if (rec < 1) rec = 1;
+          for (auto& f : it->second.fields) {
+            std::string s =
+                (var_init_[f.var_index])
+                    ? var_values_[f.var_index].as_string()
+                    : std::string();
+            if (static_cast<int>(s.size()) > f.length) {
+              s = s.substr(0, static_cast<std::size_t>(f.length));
+            }
+            std::string padded(static_cast<std::size_t>(f.length), ' ');
+            padded.replace(0, s.size(), s);
+            it->second.buffer.replace(static_cast<std::size_t>(f.offset),
+                                      static_cast<std::size_t>(f.length),
+                                      padded);
+          }
+          host_.random_write(it->second.handle, rec, it->second.record_len,
+                             it->second.buffer);
+          break;
+        }
         case OpCode::Halt: {
           halted_ = true;
           return ExecStatus::Halted;
@@ -1076,6 +1316,22 @@ std::optional<Value> Vm::get_variable(const std::string& name) const {
     }
   }
   return std::nullopt;
+}
+
+Value Vm::eval_builtin(Builtin b, const std::vector<Value>& args,
+                       std::int32_t line) {
+  return call_builtin(b, args, line);
+}
+
+std::optional<Value> Vm::get_array_element(
+    const std::string& name,
+    const std::vector<std::int32_t>& indices) const {
+  if (!arrays_.contains(name)) return std::nullopt;
+  try {
+    return arrays_.at(name, indices);
+  } catch (const std::out_of_range&) {
+    return std::nullopt;
+  }
 }
 
 bool Vm::set_variable(const std::string& name, const Value& v) {

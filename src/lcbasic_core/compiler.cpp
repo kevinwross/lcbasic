@@ -299,14 +299,50 @@ void Compiler::compile_statement(const Statement& stmt) {
               ((static_cast<std::uint32_t>(s.action) & 0xFF) << 24);
           emit(OpCode::EventControl, line, operand);
         } else if constexpr (std::is_same_v<T, OpenStmt>) {
-          // OPEN filenum AS filename (mode)
-          // Stack order at runtime: [filename, mode, filenum] (filenum on top)
-          compile_expr(*s.filename, line);
-          auto mode_idx = add_constant(Value(s.mode));
-          emit(OpCode::Constant, line, mode_idx);
-          auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
-          emit(OpCode::Constant, line, fn_idx);
-          emit(OpCode::Open, line, 0);
+          if (s.mode == "R" || s.mode == "B") {
+            // RANDOM/BINARY file: stack is [filename, record_len].
+            compile_expr(*s.filename, line);
+            if (s.record_len) {
+              compile_expr(*s.record_len, line);
+            } else {
+              auto idx = add_constant(Value(128.0));
+              emit(OpCode::Constant, line, idx);
+            }
+            emit(OpCode::RandomOpen, line,
+                 static_cast<std::uint32_t>(s.filenum));
+          } else {
+            // Sequential file: stack is [filename, mode, filenum].
+            compile_expr(*s.filename, line);
+            auto mode_idx = add_constant(Value(s.mode));
+            emit(OpCode::Constant, line, mode_idx);
+            auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
+            emit(OpCode::Constant, line, fn_idx);
+            emit(OpCode::Open, line, 0);
+          }
+        } else if constexpr (std::is_same_v<T, FieldStmt>) {
+          for (const auto& [len_expr, var] : s.fields) {
+            compile_expr(*len_expr, line);
+            auto idx = add_constant(
+                Value(static_cast<double>(variable_index(var))));
+            emit(OpCode::Constant, line, idx);
+            emit(OpCode::Field, line,
+                 static_cast<std::uint32_t>(s.filenum));
+          }
+        } else if constexpr (std::is_same_v<T, LSetStmt>) {
+          compile_expr(*s.value, line);
+          std::uint32_t operand =
+              (static_cast<std::uint32_t>(variable_index(s.var)) << 1) |
+              (s.right ? 1u : 0u);
+          emit(OpCode::LSet, line, operand);
+        } else if constexpr (std::is_same_v<T, GetPutStmt>) {
+          if (s.record) {
+            compile_expr(*s.record, line);
+          } else {
+            auto idx = add_constant(Value(-1.0));
+            emit(OpCode::Constant, line, idx);
+          }
+          emit(s.put ? OpCode::PutRecord : OpCode::GetRecord, line,
+               static_cast<std::uint32_t>(s.filenum));
         } else if constexpr (std::is_same_v<T, CloseStmt>) {
           auto fn_idx = add_constant(Value(static_cast<double>(s.filenum)));
           emit(OpCode::Constant, line, fn_idx);
@@ -357,21 +393,28 @@ void Compiler::compile_statement(const Statement& stmt) {
             record_fixup(code_.size() - 1, line);
           }
         } else if constexpr (std::is_same_v<T, InputStmt>) {
-          // Prompt (or empty string), then variable indices, then Input.
+          // Prompt (or empty string), then for each target: indices, count,
+          // variable index. Then Input with the target count.
           if (s.prompt) {
             compile_expr(*s.prompt, line);
           } else {
             auto idx = add_constant(Value(std::string("")));
             emit(OpCode::Constant, line, idx);
           }
-          for (const auto& var : s.vars) {
-            auto idx = add_constant(
-                Value(static_cast<double>(variable_index(var))));
-            emit(OpCode::Constant, line, idx);
+          for (const auto& target : s.targets) {
+            for (auto& idx : target.indices) {
+              compile_expr(*idx, line);
+            }
+            auto n_idx = add_constant(
+                Value(static_cast<double>(target.indices.size())));
+            emit(OpCode::Constant, line, n_idx);
+            auto v_idx = add_constant(
+                Value(static_cast<double>(variable_index(target.name))));
+            emit(OpCode::Constant, line, v_idx);
           }
           emit(OpCode::Input,
                line,
-               static_cast<std::uint32_t>(s.vars.size()) |
+               static_cast<std::uint32_t>(s.targets.size()) |
                    (s.line_input ? 0x100u : 0u));
         } else if constexpr (std::is_same_v<T, WhileStmt>) {
           std::size_t cond_pc = next_pc();
@@ -532,6 +575,13 @@ void Compiler::compile_expr(const Expr& expr, std::int32_t line) {
               (static_cast<std::uint32_t>(*b) << 8) |
               (static_cast<std::uint32_t>(arg.args.size()) & 0xFF);
           emit(OpCode::CallBuiltin, line, operand);
+        } else if constexpr (std::is_same_v<T, UnaryExpr>) {
+          compile_expr(*arg.operand, line);
+          if (arg.op == TokenType::Not) {
+            emit(OpCode::Not, line);
+          } else {
+            errors_.push_back("unsupported unary operator");
+          }
         } else if constexpr (std::is_same_v<T, BinaryExpr>) {
           compile_expr(*arg.left, line);
           compile_expr(*arg.right, line);
@@ -546,6 +596,11 @@ void Compiler::compile_expr(const Expr& expr, std::int32_t line) {
             case TokenType::Le: emit(OpCode::Le, line); break;
             case TokenType::Gt: emit(OpCode::Gt, line); break;
             case TokenType::Ge: emit(OpCode::Ge, line); break;
+            case TokenType::And: emit(OpCode::And, line); break;
+            case TokenType::Or: emit(OpCode::Or, line); break;
+            case TokenType::Xor: emit(OpCode::Xor, line); break;
+            case TokenType::Eqv: emit(OpCode::Eqv, line); break;
+            case TokenType::Imp: emit(OpCode::Imp, line); break;
             default: errors_.push_back("unsupported binary operator"); break;
           }
         }

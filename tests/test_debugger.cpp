@@ -200,3 +200,85 @@ TEST(dbg_snapshot_restore) {
   CHECK(x_val->as_double() == 5.0);
   CHECK(dbg.restore_snapshot());
 }
+
+TEST(dbg_evaluate_functions) {
+  auto program = dbg_compile("10 X = 10\n20 PRINT X\n30 END");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+
+  HeadlessScreen screen(25, 80);
+  RealHost host;
+  Vm vm(screen, host);
+  vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
+          compiler.variable_table(), compiler.variable_names(),
+          compiler.data_values());
+
+  debugger::Debugger dbg(vm);
+  dbg.set_breakpoint(20);
+  dbg.continue_();
+
+  auto r1 = dbg.evaluate("ABS(-5)");
+  CHECK(r1.ok);
+  CHECK(r1.value == "5");
+
+  auto r2 = dbg.evaluate("LEN(\"HELLO\")");
+  CHECK(r2.ok);
+  CHECK(r2.value == "5");
+
+  auto r3 = dbg.evaluate("LEFT$(\"HELLO\", 2)");
+  CHECK(r3.ok);
+  CHECK(r3.value == "\"HE\"");
+}
+
+TEST(dbg_evaluate_arrays) {
+  auto program = dbg_compile(
+      "10 DIM A(3)\n20 A(1) = 42\n30 PRINT A(1)\n40 END");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+
+  HeadlessScreen screen(25, 80);
+  RealHost host;
+  Vm vm(screen, host);
+  vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
+          compiler.variable_table(), compiler.variable_names(),
+          compiler.data_values());
+
+  debugger::Debugger dbg(vm);
+  dbg.set_breakpoint(30);
+  dbg.continue_();
+
+  auto r1 = dbg.evaluate("A(1)");
+  CHECK(r1.ok);
+  CHECK(r1.value == "42");
+
+  auto r2 = dbg.evaluate("A(1) + 1");
+  CHECK(r2.ok);
+  CHECK(r2.value == "43");
+
+  auto r3 = dbg.evaluate("A(9)");
+  CHECK_FALSE(r3.ok);
+}
+
+TEST(dbg_evaluate_logical) {
+  auto program = dbg_compile("10 X = 1\n20 PRINT X\n30 END");
+  REQUIRE(program != nullptr);
+  Compiler compiler(*program);
+  REQUIRE(compiler.compile());
+
+  HeadlessScreen screen(25, 80);
+  RealHost host;
+  Vm vm(screen, host);
+  vm.load(compiler.code(), compiler.constants(), compiler.line_table(),
+          compiler.variable_table(), compiler.variable_names(),
+          compiler.data_values());
+
+  debugger::Debugger dbg(vm);
+  dbg.set_breakpoint(20);
+  dbg.continue_();
+
+  auto r = dbg.evaluate("5 AND 3");
+  CHECK(r.ok);
+  CHECK(r.value == "1");
+}

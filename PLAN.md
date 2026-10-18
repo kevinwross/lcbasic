@@ -19,7 +19,7 @@ Status legend: ✅ done · 🚧 in progress · ⏳ planned
 | v1 coverage | Everything text-mode **except sound** (PLAY/SOUND/BEEP stubbed); graphics statements parse but report "not implemented" |
 | Display | Full-screen **ScreenDevice abstraction** (80×25 text grid + cursor); ANSI terminal backend now, GPU window later |
 | CLI | `lcbasic prog.bas` runner + direct-mode REPL (no full-screen editor) |
-| Binary files | Tokenized `.BAS` read **and** write (incl. protected decode) |
+| Program files | Plain-text `.BAS` read/write (tokenized binary support dropped) |
 | Testing | Unit + golden fixtures + **differential vs PC-BASIC**, with GitHub Actions CI |
 | Time-travel | Deferred; VM designed for cheap snapshots, rewind implemented later |
 | Layout | CMake build, binary name `lcbasic` |
@@ -32,14 +32,14 @@ Status legend: ✅ done · 🚧 in progress · ⏳ planned
 lcbasic/
   CMakeLists.txt            # build
   src/
-    lcbasic-core/            # values, lexer, parser, bytecode compiler, VM, errors
-    lcbasic-screen/          # ScreenDevice impls: ANSI terminal + headless
-    lcbasic-fstok/           # tokenized .BAS codec (read/write, protected)
-    lcbasic-debug/           # debugger library: breakpoints, stepping, eval, stack, snapshots
-    lcbasic-dap/             # Debug Adapter Protocol server over lcbasic-debug
-    lcbasic-cli/             # `lcbasic` binary: file runner + direct-mode REPL
+    lcbasic_core/           # values, lexer, parser, compiler, VM, errors
+    lcbasic_screen/         # ScreenDevice impls: ANSI terminal + headless
+    lcbasic_debug/          # debugger library: breakpoints, stepping, eval, stack
+    lcbasic_dap/            # Debug Adapter Protocol server over lcbasic_debug
+    lcbasic_cli/            # `lcbasic` binary: file runner + direct-mode REPL
+  tests/
+    differential/           # differential harness + corpus vs PC-BASIC
   fixtures/                 # *.bas + expected output
-  tests/                    # differential harness + conformance corpus
 ```
 
 Key seams:
@@ -75,10 +75,11 @@ Key seams:
 - **Number formatting** module implementing GW-BASIC-style `PRINT` output.
 - Error model: GW-BASIC error-code table + messages.
 
-## 4. Tokenized `.BAS` codec (`lcbasic-fstok`)
+## 4. Text `.BAS` I/O (`program_loader`)
 
-Decode/encode the binary format (next-line offsets, token bytes, hex/octal,
-numeric encodings) and the protected decode/encode algorithm.
+Load plain-text `.BAS` files (line-numbered source), parse them into a
+`Program`, and save programs back as text. Tokenized binary support
+(including protected files) was dropped.
 
 ## 5. Debugger (`lcbasic-debug` + `lcbasic-dap`)
 
@@ -111,7 +112,7 @@ stack (GOSUB + FOR frames), memory read/patch, bytecode disassembly, snapshots.
 | M1 | Lexer/parser/line store, direct-mode REPL, `LIST`/`NEW`/`RUN`, expressions, core control flow | ✅ |
 | M2 | Types, arrays (`DIM`/`OPTION BASE`/`DEF*`), strings, `DEF FN`, `DATA`/`READ`/`RESTORE` | ✅ |
 | M3 | File I/O + DOS commands, error handling (`ON ERROR`/`RESUME`), event trapping | ✅ |
-| M4 | Tokenized `.BAS` read + write (incl. protected) | ✅ |
+| M4 | Plain-text `.BAS` read + write (tokenized support dropped) | ✅ |
 | M5 | `lcbasic-debug` library + `lcbasic-dap` | ✅ |
 | M6 | Differential hardening, `xfail` registry, conformance corpus | ✅ |
 | M7 | GPU screen backend, sound, time-travel debugging | ⏳ |
@@ -124,6 +125,15 @@ Notes:
   at line boundaries using the `Host` clock; KEY/PLAY/COM/PEN/STRIG
   handlers are armed but not fired (no real event source yet — planned to
   be virtualised through `Host`).
+- Logical/bitwise operators `AND`/`OR`/`NOT`/`XOR`/`EQV`/`IMP` are
+  implemented on 16-bit integers (true = -1), with GW-BASIC precedence.
+- Random-access files: `OPEN ... FOR RANDOM [LEN=]`, `FIELD`, `LSET`/`RSET`,
+  `GET`/`PUT`, `CLOSE`.
+- Built-in functions: numeric (`ABS`…`CDBL`, `RND`), string (`LEN`…`OCT$`),
+  and `TAB`/`SPC`/`FRE`/`POS`/`CSRLIN`.
+- Graphics (`PSET`/`LINE`/`CIRCLE`/…) and sound (`SOUND`/`BEEP`/`PLAY`)
+  statements parse as no-ops pending a later milestone.
+- Tokenized binary `.BAS` support was dropped; only plain text is read/written.
 
 ---
 

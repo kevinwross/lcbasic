@@ -183,3 +183,69 @@ TEST(stmt_line_input_prompt) {
   REQUIRE(r.ran);
   CHECK(r.output == "Say: hi there\n");
 }
+
+TEST(stmt_input_array_element) {
+  ScriptedHost host({"42"});
+  auto r = e2e::run_with_host(
+      "10 DIM A(3)\n20 INPUT A(2)\n30 PRINT A(2)\n40 END", host);
+  REQUIRE(r.ran);
+  CHECK(r.output == "?  42 \n");
+}
+
+TEST(stmt_input_reprompt) {
+  ScriptedHost host({"abc", "21"});
+  auto r = e2e::run_with_host(
+      "10 INPUT X\n20 PRINT X\n30 END", host);
+  REQUIRE(r.ran);
+  CHECK(r.output == "? ?Redo from start\n 21 \n");
+}
+
+TEST(stmt_input_reprompt_gives_up) {
+  ScriptedHost host({"x", "y", "z", "w", "v", "u"});
+  auto r = e2e::run_with_host(
+      "10 INPUT X\n20 PRINT X\n30 END", host);
+  CHECK_FALSE(r.ran);
+  CHECK(r.error.find("error 13") != std::string::npos);
+}
+
+// ---------- Random-access files ----------
+
+TEST(stmt_random_file_roundtrip) {
+  std::string path = "/tmp/lcbasic_random_test.dat";
+  std::remove(path.c_str());
+  auto r = e2e::run(
+      "10 OPEN \"" + path + "\" FOR RANDOM AS #1 LEN=20\n"
+      "20 FIELD #1, 10 AS N$, 10 AS V$\n"
+      "30 LSET N$ = \"ALICE\"\n40 LSET V$ = \"42\"\n50 PUT #1, 1\n"
+      "60 LSET N$ = \"BOB\"\n70 LSET V$ = \"99\"\n80 PUT #1, 2\n"
+      "90 GET #1, 1\n100 PRINT \"[\" + N$ + \"][\" + V$ + \"]\"\n"
+      "110 GET #1, 2\n120 PRINT \"[\" + N$ + \"][\" + V$ + \"]\"\n"
+      "130 CLOSE #1\n140 END");
+  std::remove(path.c_str());
+  REQUIRE(r.ran);
+  CHECK(r.output == "[ALICE     ][42        ]\n[BOB       ][99        ]\n");
+}
+
+TEST(stmt_lset_pads_left) {
+  std::string path = "/tmp/lcbasic_lset_test.dat";
+  std::remove(path.c_str());
+  auto r = e2e::run(
+      "10 OPEN \"" + path + "\" FOR RANDOM AS #1 LEN=10\n"
+      "20 FIELD #1, 10 AS A$\n30 LSET A$ = \"HI\"\n"
+      "40 PRINT \"[\" + A$ + \"]\"\n50 CLOSE #1\n60 END");
+  std::remove(path.c_str());
+  REQUIRE(r.ran);
+  CHECK(r.output == "[HI        ]\n");
+}
+
+TEST(stmt_rset_pads_right) {
+  std::string path = "/tmp/lcbasic_rset_test.dat";
+  std::remove(path.c_str());
+  auto r = e2e::run(
+      "10 OPEN \"" + path + "\" FOR RANDOM AS #1 LEN=10\n"
+      "20 FIELD #1, 10 AS A$\n30 RSET A$ = \"HI\"\n"
+      "40 PRINT \"[\" + A$ + \"]\"\n50 CLOSE #1\n60 END");
+  std::remove(path.c_str());
+  REQUIRE(r.ran);
+  CHECK(r.output == "[        HI]\n");
+}

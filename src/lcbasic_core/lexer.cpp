@@ -91,6 +91,12 @@ const std::unordered_map<std::string_view, TokenType> kKeywords = {
     {"VIEW", TokenType::KeywordView},
     {"RANDOM", TokenType::KeywordRandom},
     {"BINARY", TokenType::KeywordBinary},
+    {"AND", TokenType::And},
+    {"OR", TokenType::Or},
+    {"NOT", TokenType::Not},
+    {"XOR", TokenType::Xor},
+    {"EQV", TokenType::Eqv},
+    {"IMP", TokenType::Imp},
 };
 
 }  // namespace

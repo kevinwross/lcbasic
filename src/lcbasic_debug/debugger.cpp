@@ -1,9 +1,11 @@
 #include "debugger.h"
 
+#include "builtins.h"
 #include "lexer.h"
 #include "parser.h"
 
 #include <algorithm>
+#include <cmath>
 #include <sstream>
 
 namespace debugger {
@@ -25,6 +27,12 @@ const char* opcode_name(OpCode op) {
     case OpCode::Le: return "LE";
     case OpCode::Gt: return "GT";
     case OpCode::Ge: return "GE";
+    case OpCode::And: return "AND";
+    case OpCode::Or: return "OR";
+    case OpCode::Not: return "NOT";
+    case OpCode::Xor: return "XOR";
+    case OpCode::Eqv: return "EQV";
+    case OpCode::Imp: return "IMP";
     case OpCode::Print: return "PRINT";
     case OpCode::Pop: return "POP";
     case OpCode::Jmp: return "JMP";
@@ -61,6 +69,11 @@ const char* opcode_name(OpCode op) {
     case OpCode::RaiseError: return "ERROR";
     case OpCode::MidAssign: return "MIDASSIGN";
     case OpCode::CallBuiltin: return "BUILTIN";
+    case OpCode::RandomOpen: return "ROPEN";
+    case OpCode::Field: return "FIELD";
+    case OpCode::LSet: return "LSET";
+    case OpCode::GetRecord: return "GET";
+    case OpCode::PutRecord: return "PUT";
     case OpCode::Open: return "OPEN";
     case OpCode::Close: return "CLOSE";
     case OpCode::PrintFile: return "PRINT#";
@@ -95,7 +108,7 @@ std::string format_value(const Value& v) {
 
 // Evaluate an expression AST against the VM's variable state.
 struct EvalContext {
-  const Vm* vm;
+  Vm* vm;
   bool ok = true;
   std::string error;
 };
@@ -122,12 +135,32 @@ Value eval_binary(EvalContext& ctx, const BinaryExpr& b) {
         return Value{};
       }
       return Value(a / c);
-    case TokenType::Eq: return Value(a == c ? 1.0 : 0.0);
-    case TokenType::Ne: return Value(a != c ? 1.0 : 0.0);
-    case TokenType::Lt: return Value(a < c ? 1.0 : 0.0);
-    case TokenType::Le: return Value(a <= c ? 1.0 : 0.0);
-    case TokenType::Gt: return Value(a > c ? 1.0 : 0.0);
-    case TokenType::Ge: return Value(a >= c ? 1.0 : 0.0);
+    case TokenType::Eq: return Value(a == c ? -1.0 : 0.0);
+    case TokenType::Ne: return Value(a != c ? -1.0 : 0.0);
+    case TokenType::Lt: return Value(a < c ? -1.0 : 0.0);
+    case TokenType::Le: return Value(a <= c ? -1.0 : 0.0);
+    case TokenType::Gt: return Value(a > c ? -1.0 : 0.0);
+    case TokenType::Ge: return Value(a >= c ? -1.0 : 0.0);
+    case TokenType::And:
+      return Value(static_cast<double>(static_cast<std::int16_t>(
+          static_cast<std::int16_t>(std::round(a)) &
+          static_cast<std::int16_t>(std::round(c)))));
+    case TokenType::Or:
+      return Value(static_cast<double>(static_cast<std::int16_t>(
+          static_cast<std::int16_t>(std::round(a)) |
+          static_cast<std::int16_t>(std::round(c)))));
+    case TokenType::Xor:
+      return Value(static_cast<double>(static_cast<std::int16_t>(
+          static_cast<std::int16_t>(std::round(a)) ^
+          static_cast<std::int16_t>(std::round(c)))));
+    case TokenType::Eqv:
+      return Value(static_cast<double>(static_cast<std::int16_t>(
+          ~(static_cast<std::int16_t>(std::round(a)) ^
+            static_cast<std::int16_t>(std::round(c))))));
+    case TokenType::Imp:
+      return Value(static_cast<double>(static_cast<std::int16_t>(
+          (~static_cast<std::int16_t>(std::round(a))) |
+          static_cast<std::int16_t>(std::round(c)))));
     default:
       ctx.ok = false;
       ctx.error = "unsupported operator";
@@ -152,10 +185,29 @@ Value eval_expr(EvalContext& ctx, const Expr& expr) {
           return *v;
         } else if constexpr (std::is_same_v<T, BinaryExpr>) {
           return eval_binary(ctx, arg);
-        } else if constexpr (std::is_same_v<T, ArrayRefExpr>) {
+        } else if constexpr (std::is_same_v<T, UnaryExpr>) {
+          Value v = eval_expr(ctx, *arg.operand);
+          if (arg.op == TokenType::Not) {
+            std::int16_t x = static_cast<std::int16_t>(std::round(v.as_double()));
+            return Value(static_cast<double>(static_cast<std::int16_t>(~x)));
+          }
           ctx.ok = false;
-          ctx.error = "array references not supported in evaluation";
+          ctx.error = "unsupported unary operator";
           return Value{};
+        } else if constexpr (std::is_same_v<T, ArrayRefExpr>) {
+          std::vector<std::int32_t> indices;
+          for (const auto& idx : arg.indices) {
+            Value iv = eval_expr(ctx, *idx);
+            if (!ctx.ok) return Value{};
+            indices.push_back(static_cast<std::int32_t>(std::round(iv.as_double())));
+          }
+          auto v = ctx.vm->get_array_element(arg.name, indices);
+          if (!v) {
+            ctx.ok = false;
+            ctx.error = "subscript out of range";
+            return Value{};
+          }
+          return *v;
         } else if constexpr (std::is_same_v<T, FnCallExpr>) {
           ctx.ok = false;
           ctx.error = "FN functions not supported in evaluation";
@@ -165,9 +217,19 @@ Value eval_expr(EvalContext& ctx, const Expr& expr) {
           ctx.error = "builtin not supported in evaluation";
           return Value{};
         } else if constexpr (std::is_same_v<T, FunctionExpr>) {
-          ctx.ok = false;
-          ctx.error = "functions not supported in evaluation";
-          return Value{};
+          auto b = find_builtin(arg.name);
+          if (!b) {
+            ctx.ok = false;
+            ctx.error = "unknown function";
+            return Value{};
+          }
+          std::vector<Value> args;
+          for (const auto& a : arg.args) {
+            Value v = eval_expr(ctx, *a);
+            if (!ctx.ok) return Value{};
+            args.push_back(std::move(v));
+          }
+          return ctx.vm->eval_builtin(*b, args);
         }
       },
       expr.data);
@@ -339,7 +401,7 @@ std::vector<StackFrame> Debugger::stack_frames() const {
 
 // ----- Expression evaluation -----
 
-Debugger::EvalResult Debugger::evaluate(const std::string& expression) const {
+Debugger::EvalResult Debugger::evaluate(const std::string& expression) {
   EvalResult result;
 
   Lexer lexer(expression, 0);

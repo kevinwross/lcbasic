@@ -121,6 +121,9 @@ enum class TokenType {
   And,
   Or,
   Not,
+  Xor,
+  Eqv,
+  Imp,
 
   Eof,
   Error,

@@ -46,7 +46,6 @@ endif()
 
 add_subdirectory(src/lcbasic_core)
 add_subdirectory(src/lcbasic_screen)
-add_subdirectory(src/lcbasic_fstok)
 add_subdirectory(src/lcbasic_debug)
 add_subdirectory(src/lcbasic_dap)
 

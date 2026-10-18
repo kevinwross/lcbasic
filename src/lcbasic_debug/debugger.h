@@ -72,7 +72,7 @@ public:
     std::string value;
     std::string error;
   };
-  EvalResult evaluate(const std::string& expression) const;
+  EvalResult evaluate(const std::string& expression);
 
   // ----- Disassembly -----
   std::string disassemble() const;

@@ -159,3 +159,43 @@ int RealHost::dos_shell(const std::string& command) {
   if (command.empty()) return 0;
   return std::system(command.c_str());
 }
+
+// ----- Random-access files -----
+
+int RealHost::random_open(const std::string& filename) {
+  auto entry = std::make_unique<FileEntry>();
+  entry->fs.open(filename, std::ios::in | std::ios::out | std::ios::binary);
+  if (!entry->fs.is_open()) {
+    entry->fs.clear();
+    entry->fs.open(filename, std::ios::out | std::ios::binary);
+    entry->fs.close();
+    entry->fs.clear();
+    entry->fs.open(filename, std::ios::in | std::ios::out | std::ios::binary);
+  }
+  if (!entry->fs.is_open()) return -1;
+  int handle = static_cast<int>(files_.size());
+  files_.push_back(std::move(*entry));
+  return handle;
+}
+
+void RealHost::random_close(int handle) { file_close(handle); }
+
+std::string RealHost::random_read(int handle, long record, int record_len) {
+  std::string data(static_cast<std::size_t>(record_len), ' ');
+  if (handle < 0 || handle >= static_cast<int>(files_.size())) return data;
+  auto& fs = files_[handle].fs;
+  fs.clear();
+  fs.seekg(static_cast<std::streamoff>((record - 1) * record_len));
+  fs.read(&data[0], record_len);
+  return data;
+}
+
+void RealHost::random_write(int handle, long record, int record_len,
+                            const std::string& data) {
+  if (handle < 0 || handle >= static_cast<int>(files_.size())) return;
+  auto& fs = files_[handle].fs;
+  fs.clear();
+  fs.seekp(static_cast<std::streamoff>((record - 1) * record_len));
+  fs.write(data.data(), record_len);
+  fs.flush();
+}

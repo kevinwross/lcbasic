@@ -1,7 +1,6 @@
 #include "dap_server.h"
 
-#include "basic_format.h"
-#include "lexer.h"
+#include "program_loader.h"
 
 #include <algorithm>
 #include <sstream>
@@ -169,26 +168,9 @@ void DapServer::handle_launch(const Json& request) {
 }
 
 bool DapServer::load_program(const std::string& path) {
-  auto br = fstok::load_bas_file(path);
-  if (br.program.empty()) return false;
-
   auto program = std::make_unique<Program>();
-  std::vector<std::pair<std::int32_t, std::string>> lines(br.program.begin(),
-                                                          br.program.end());
-  std::sort(lines.begin(), lines.end(),
-            [](const auto& a, const auto& b) { return a.first < b.first; });
-
-  for (auto& [ln, src] : lines) {
-    std::string numbered = std::to_string(ln) + " " + src;
-    Lexer lexer(numbered, ln);
-    auto tokens = lexer.scan();
-    Parser parser(std::move(tokens));
-    if (!parser.parse()) return false;
-    auto parsed = parser.release_program();
-    for (auto& st : parsed.lines) {
-      program->lines.push_back(std::move(st));
-    }
-  }
+  std::string error;
+  if (!load_program_file(path, *program, error)) return false;
 
   Compiler compiler(*program);
   if (!compiler.compile()) return false;

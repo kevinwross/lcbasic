@@ -107,6 +107,15 @@ public:
   // Look up a variable value by name (debugger read support).
   std::optional<Value> get_variable(const std::string& name) const;
 
+  // Evaluate a built-in function (debugger support).
+  Value eval_builtin(Builtin b, const std::vector<Value>& args,
+                     std::int32_t line = 0);
+
+  // Read an array element (debugger support).
+  std::optional<Value> get_array_element(
+      const std::string& name,
+      const std::vector<std::int32_t>& indices) const;
+
 private:
   Screen& screen_;
   Host& host_;
@@ -123,6 +132,21 @@ private:
   std::array<VarType, 26> letter_types_;   // DEFINT/DEFSNG/DEFDBL/DEFSTR
   std::vector<std::string> variable_names_; // index -> name
   std::vector<int> file_handles_;          // filenum -> host file handle (-1 = closed)
+
+  // Random-access file state.
+  struct RandomField {
+    std::uint8_t var_index;
+    int offset;
+    int length;
+  };
+  struct RandomFile {
+    int handle = -1;
+    int record_len = 128;
+    std::string buffer;
+    std::vector<RandomField> fields;
+    int next_offset = 0;
+  };
+  std::unordered_map<int, RandomFile> random_files_;
   std::vector<Value> stack_;
   std::vector<std::size_t> call_stack_;    // return addresses for GOSUB
   struct ForFrame {

@@ -16,6 +16,7 @@ enum class OpCode : std::uint8_t {
   StoreVar,     // pop and store to variable[operand]
   Add, Sub, Mul, Div,
   Eq, Ne, Lt, Le, Gt, Ge,
+  And, Or, Not, Xor, Eqv, Imp,  // bitwise/logical (16-bit)
   Print,        // pop and print
   Pop,          // discard top of stack
   Jmp,          // jump to PC offset stored in operand
@@ -59,6 +60,11 @@ enum class OpCode : std::uint8_t {
   RaiseError,   // stack: error code
   MidAssign,    // operand = target var index; stack: value, start, length
   CallBuiltin,  // operand = (builtin id << 8) | arg count
+  RandomOpen,   // operand = filenum; stack: filename, record_len
+  Field,        // operand = filenum; stack: length, variable index
+  LSet,         // operand = (var index << 1) | right_justify; stack: value
+  GetRecord,    // operand = filenum; stack: record number
+  PutRecord,    // operand = filenum; stack: record number
   Halt,         // stop execution
 };
 

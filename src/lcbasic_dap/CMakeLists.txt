@@ -8,7 +8,6 @@ target_include_directories(lcbasic_dap PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(lcbasic_dap PUBLIC
   lcbasic_core
   lcbasic_debug
-  lcbasic_fstok
   lcbasic_screen
 )
 

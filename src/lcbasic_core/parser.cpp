@@ -323,11 +323,23 @@ bool Parser::parse_statement() {
       if (match(TokenType::KeywordOutput)) open.mode = "O";
       else if (match(TokenType::KeywordInput)) open.mode = "I";
       else if (match(TokenType::KeywordAppend)) open.mode = "A";
-      else error_at_current("expected INPUT/OUTPUT/APPEND after FOR");
+      else if (match(TokenType::KeywordRandom)) open.mode = "R";
+      else if (match(TokenType::KeywordBinary)) open.mode = "B";
+      else error_at_current("expected INPUT/OUTPUT/APPEND/RANDOM after FOR");
       consume(TokenType::KeywordAs, "expected AS after mode");
       consume(TokenType::KeywordHash, "expected '#' after AS");
       consume(TokenType::Number, "expected file number after '#'");
       open.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      // Optional LEN= for RANDOM files (LEN is an identifier, not a keyword).
+      if (check(TokenType::Identifier) &&
+          tokens_[current_].lexeme.size() == 3 &&
+          (tokens_[current_].lexeme == "LEN" ||
+           tokens_[current_].lexeme == "len")) {
+        advance();  // LEN
+        consume(TokenType::Eq, "expected '=' after LEN");
+        open.record_len = parse_expression();
+        if (!open.record_len) return false;
+      }
       stmt.data = std::move(open);
     } else if (match(TokenType::KeywordClose)) {
       CloseStmt close;
@@ -385,8 +397,21 @@ bool Parser::parse_statement() {
           }
         }
         do {
-          consume(TokenType::Identifier, "expected variable name after INPUT");
-          in.vars.push_back(tokens_[current_ - 1].lexeme);
+          ReadTarget target;
+          consume(TokenType::Identifier,
+                  "expected variable name after INPUT");
+          target.name = tokens_[current_ - 1].lexeme;
+          if (check(TokenType::LParen)) {
+            target.is_array = true;
+            advance();
+            do {
+              auto idx = parse_expression();
+              if (!idx) return false;
+              target.indices.push_back(std::move(idx));
+            } while (match(TokenType::Comma));
+            consume(TokenType::RParen, "expected ')' after indices");
+          }
+          in.targets.push_back(std::move(target));
         } while (match(TokenType::Comma));
         stmt.data = std::move(in);
       }
@@ -593,9 +618,21 @@ bool Parser::parse_statement() {
           }
         }
         do {
+          ReadTarget target;
           consume(TokenType::Identifier,
                   "expected variable after LINE INPUT");
-          in.vars.push_back(tokens_[current_ - 1].lexeme);
+          target.name = tokens_[current_ - 1].lexeme;
+          if (check(TokenType::LParen)) {
+            target.is_array = true;
+            advance();
+            do {
+              auto idx = parse_expression();
+              if (!idx) return false;
+              target.indices.push_back(std::move(idx));
+            } while (match(TokenType::Comma));
+            consume(TokenType::RParen, "expected ')' after indices");
+          }
+          in.targets.push_back(std::move(target));
         } while (match(TokenType::Comma));
         stmt.data = std::move(in);
       } else {
@@ -710,15 +747,46 @@ bool Parser::parse_statement() {
           (!print.separators.empty() &&
            print.separators.back() != TokenType::Eof);
       stmt.data = std::move(print);
+    } else if (match(TokenType::KeywordField)) {
+      FieldStmt f;
+      consume(TokenType::KeywordHash, "expected '#' after FIELD");
+      consume(TokenType::Number, "expected file number after '#'");
+      f.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      consume(TokenType::Comma, "expected ',' after FIELD file number");
+      do {
+        auto len = parse_expression();
+        if (!len) return false;
+        consume(TokenType::KeywordAs, "expected AS in FIELD");
+        consume(TokenType::Identifier, "expected string variable in FIELD");
+        f.fields.emplace_back(std::move(len), tokens_[current_ - 1].lexeme);
+      } while (match(TokenType::Comma));
+      stmt.data = std::move(f);
+    } else if (match(TokenType::KeywordLset) ||
+               match(TokenType::KeywordRset)) {
+      LSetStmt l;
+      l.right = (tokens_[current_ - 1].type == TokenType::KeywordRset);
+      consume(TokenType::Identifier, "expected variable in LSET/RSET");
+      l.var = tokens_[current_ - 1].lexeme;
+      consume(TokenType::Eq, "expected '=' in LSET/RSET");
+      l.value = parse_expression();
+      if (!l.value) return false;
+      stmt.data = std::move(l);
+    } else if (match(TokenType::KeywordGet) ||
+               match(TokenType::KeywordPut)) {
+      GetPutStmt g;
+      g.put = (tokens_[current_ - 1].type == TokenType::KeywordPut);
+      consume(TokenType::KeywordHash, "expected '#' after GET/PUT");
+      consume(TokenType::Number, "expected file number after '#'");
+      g.filenum = static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      if (match(TokenType::Comma)) {
+        g.record = parse_expression();
+        if (!g.record) return false;
+      }
+      stmt.data = std::move(g);
     } else if (check(TokenType::KeywordTron) ||
                check(TokenType::KeywordTroff) ||
                check(TokenType::KeywordCont) ||
                check(TokenType::KeywordMerge) ||
-               check(TokenType::KeywordField) ||
-               check(TokenType::KeywordGet) ||
-               check(TokenType::KeywordPut) ||
-               check(TokenType::KeywordLset) ||
-               check(TokenType::KeywordRset) ||
                check(TokenType::KeywordPset) ||
                check(TokenType::KeywordPreset) ||
                check(TokenType::KeywordCircle) ||
@@ -729,8 +797,8 @@ bool Parser::parse_statement() {
                check(TokenType::KeywordPalette) ||
                check(TokenType::KeywordWindow) ||
                check(TokenType::KeywordView)) {
-      // Parsed but not implemented (graphics / sound / random files /
-      // tracing). Consume the rest of the statement and emit nothing.
+      // Parsed but not implemented (graphics / sound / tracing). Consume the
+      // rest of the statement and emit nothing.
       std::string name = peek().lexeme;
       while (!is_at_end() && !check(TokenType::Newline) &&
              !check(TokenType::Colon)) {
@@ -847,6 +915,82 @@ std::unique_ptr<Statement> Parser::parse_statement_no_line() {
 }
 
 std::unique_ptr<Expr> Parser::parse_expression() {
+  return parse_imp();
+}
+
+std::unique_ptr<Expr> Parser::parse_imp() {
+  auto left = parse_eqv();
+  if (!left) return nullptr;
+  while (match(TokenType::Imp)) {
+    auto right = parse_eqv();
+    if (!right) return nullptr;
+    auto e = std::make_unique<Expr>();
+    e->data = BinaryExpr{std::move(left), TokenType::Imp, std::move(right)};
+    left = std::move(e);
+  }
+  return left;
+}
+
+std::unique_ptr<Expr> Parser::parse_eqv() {
+  auto left = parse_xor();
+  if (!left) return nullptr;
+  while (match(TokenType::Eqv)) {
+    auto right = parse_xor();
+    if (!right) return nullptr;
+    auto e = std::make_unique<Expr>();
+    e->data = BinaryExpr{std::move(left), TokenType::Eqv, std::move(right)};
+    left = std::move(e);
+  }
+  return left;
+}
+
+std::unique_ptr<Expr> Parser::parse_xor() {
+  auto left = parse_or();
+  if (!left) return nullptr;
+  while (match(TokenType::Xor)) {
+    auto right = parse_or();
+    if (!right) return nullptr;
+    auto e = std::make_unique<Expr>();
+    e->data = BinaryExpr{std::move(left), TokenType::Xor, std::move(right)};
+    left = std::move(e);
+  }
+  return left;
+}
+
+std::unique_ptr<Expr> Parser::parse_or() {
+  auto left = parse_and();
+  if (!left) return nullptr;
+  while (match(TokenType::Or)) {
+    auto right = parse_and();
+    if (!right) return nullptr;
+    auto e = std::make_unique<Expr>();
+    e->data = BinaryExpr{std::move(left), TokenType::Or, std::move(right)};
+    left = std::move(e);
+  }
+  return left;
+}
+
+std::unique_ptr<Expr> Parser::parse_and() {
+  auto left = parse_not();
+  if (!left) return nullptr;
+  while (match(TokenType::And)) {
+    auto right = parse_not();
+    if (!right) return nullptr;
+    auto e = std::make_unique<Expr>();
+    e->data = BinaryExpr{std::move(left), TokenType::And, std::move(right)};
+    left = std::move(e);
+  }
+  return left;
+}
+
+std::unique_ptr<Expr> Parser::parse_not() {
+  if (match(TokenType::Not)) {
+    auto operand = parse_not();
+    if (!operand) return nullptr;
+    auto e = std::make_unique<Expr>();
+    e->data = UnaryExpr{TokenType::Not, std::move(operand)};
+    return e;
+  }
   return parse_relational();
 }
 
