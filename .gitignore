@@ -22,3 +22,6 @@ Testing/
 *.bas
 !fixtures/**
 !tests/differential/corpus/**
+
+# Local make build
+build-make/
