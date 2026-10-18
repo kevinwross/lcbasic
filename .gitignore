@@ -22,10 +22,10 @@ Testing/
 *.bas
 !fixtures/**
 !tests/differential/corpus/**
-
-# Local sample programs/data (not part of the project)
-samples/
-FamousBirthdays.dat
+# Bundled sample programs and their data
+!startrek.bas
+!FamousBirthdays.bas
+!samples/**
 
 # Local make build
 build-make/
