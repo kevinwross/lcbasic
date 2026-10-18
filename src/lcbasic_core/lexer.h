@@ -33,6 +33,7 @@ enum class TokenType {
   KeywordOption,
   KeywordBase,
   KeywordInput,
+  KeywordPrompt,
   KeywordLine,
   KeywordOn,
   KeywordError,

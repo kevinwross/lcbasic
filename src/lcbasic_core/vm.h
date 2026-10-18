@@ -41,7 +41,7 @@ public:
   void load(const std::vector<Instruction>& code,
             const std::vector<Value>& constants,
             const std::vector<LineEntry>& line_table,
-            const std::unordered_map<std::string, std::uint8_t>& variable_table,
+            const std::unordered_map<std::string, std::uint16_t>& variable_table,
             const std::vector<std::string>& variable_names,
             const std::vector<Value>& data_values,
             const std::vector<FnDesc>& fn_descs = {});
@@ -80,7 +80,7 @@ public:
   const DataPool& data_pool() const { return data_pool_; }
 
   struct ForFrameView {
-    std::uint8_t var_index;
+    std::uint16_t var_index;
     double limit;
     double step;
     std::size_t body_start_pc;
@@ -137,7 +137,7 @@ private:
 
   // Random-access file state.
   struct RandomField {
-    std::uint8_t var_index;
+    std::uint16_t var_index;
     int offset;
     int length;
   };
@@ -160,7 +160,7 @@ private:
   std::vector<Value> stack_;
   std::vector<std::size_t> call_stack_;    // return addresses for GOSUB
   struct ForFrame {
-    std::uint8_t var_index;
+    std::uint16_t var_index;
     double limit;
     double step;
     std::size_t body_start_pc;
@@ -198,8 +198,8 @@ private:
 
   Value pop();
   void push(Value v);
-  std::string var_name(std::uint8_t idx) const;
-  VarType var_type(std::uint8_t idx) const;
+  std::string var_name(std::uint16_t idx) const;
+  VarType var_type(std::uint16_t idx) const;
   // Coerce a value to a variable/array element type, raising Type mismatch
   // (13) or Overflow (6) as GW-BASIC would.
   Value coerce_value(const Value& v, VarType t, std::int32_t line);

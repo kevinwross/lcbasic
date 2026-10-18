@@ -5,15 +5,15 @@
 
 Compiler::Compiler(const Program& program) : program_(program) {}
 
-std::uint8_t Compiler::add_constant(const Value& v) {
+std::uint32_t Compiler::add_constant(const Value& v) {
   constants_.push_back(v);
-  return static_cast<std::uint8_t>(constants_.size() - 1);
+  return static_cast<std::uint32_t>(constants_.size() - 1);
 }
 
-std::uint8_t Compiler::variable_index(const std::string& name) {
+std::uint16_t Compiler::variable_index(const std::string& name) {
   auto it = variable_table_.find(name);
   if (it != variable_table_.end()) return it->second;
-  std::uint8_t idx = static_cast<std::uint8_t>(variable_table_.size());
+  std::uint16_t idx = static_cast<std::uint16_t>(variable_table_.size());
   variable_table_.emplace(name, idx);
   variable_names_.push_back(name);
   return idx;
@@ -109,15 +109,15 @@ void Compiler::compile_statement(const Statement& stmt) {
               compile_expr(*idx, line);
             }
             compile_expr(*s.value, line);
-            std::uint8_t vidx = variable_index(s.var);
+            std::uint16_t vidx = variable_index(s.var);
             std::uint8_t num_indices =
                 static_cast<std::uint8_t>(s.indices.size());
             std::uint32_t operand =
-                (static_cast<std::uint32_t>(num_indices) << 8) | vidx;
+                (static_cast<std::uint32_t>(num_indices) << 16) | vidx;
             emit(OpCode::ArrayStore, line, operand);
           } else {
             compile_expr(*s.value, line);
-            std::uint8_t vidx = variable_index(s.var);
+            std::uint16_t vidx = variable_index(s.var);
             emit(OpCode::StoreVar, line, vidx);
           }
         } else if constexpr (std::is_same_v<T, GotoStmt>) {
@@ -166,13 +166,13 @@ void Compiler::compile_statement(const Statement& stmt) {
           }
         } else if constexpr (std::is_same_v<T, ForStmt>) {
           compile_expr(*s.start, line);
-          std::uint8_t vidx = variable_index(s.var);
+          std::uint16_t vidx = variable_index(s.var);
           emit(OpCode::StoreVar, line, vidx);
           compile_expr(*s.end, line);
           compile_expr(*s.step, line);
           emit(OpCode::ForInit, line, vidx);
         } else if constexpr (std::is_same_v<T, NextStmt>) {
-          std::uint8_t vidx = variable_index(s.var);
+          std::uint16_t vidx = variable_index(s.var);
           emit(OpCode::ForNext, line, vidx);
         } else if constexpr (std::is_same_v<T, GosubStmt>) {
           emit(OpCode::Call, line, 0);
@@ -189,11 +189,11 @@ void Compiler::compile_statement(const Statement& stmt) {
             for (const auto& ub : entry.upper_bounds) {
               compile_expr(*ub, line);
             }
-            std::uint8_t vidx = variable_index(entry.name);
+            std::uint16_t vidx = variable_index(entry.name);
             std::uint8_t num_dims =
                 static_cast<std::uint8_t>(entry.upper_bounds.size());
             std::uint32_t operand =
-                (static_cast<std::uint32_t>(num_dims) << 8) | vidx;
+                (static_cast<std::uint32_t>(num_dims) << 16) | vidx;
             emit(OpCode::Dim, line, operand);
           }
         } else if constexpr (std::is_same_v<T, OptionBaseStmt>) {
@@ -212,14 +212,14 @@ void Compiler::compile_statement(const Statement& stmt) {
               for (auto& idx : target.indices) {
                 compile_expr(*idx, line);
               }
-              std::uint8_t vidx = variable_index(target.name);
+              std::uint16_t vidx = variable_index(target.name);
               std::uint8_t num_indices =
                   static_cast<std::uint8_t>(target.indices.size());
               std::uint32_t operand =
-                  (static_cast<std::uint32_t>(num_indices) << 8) | vidx;
+                  (static_cast<std::uint32_t>(num_indices) << 16) | vidx;
               emit(OpCode::ReadArray, line, operand);
             } else {
-              std::uint8_t vidx = variable_index(target.name);
+              std::uint16_t vidx = variable_index(target.name);
               emit(OpCode::ReadVar, line, vidx);
             }
           }
@@ -470,7 +470,7 @@ void Compiler::compile_statement(const Statement& stmt) {
         } else if constexpr (std::is_same_v<T, OnGotoStmt>) {
           std::string sel_var = std::string("\x01ON_SEL");
           compile_expr(*s.selector, line);
-          std::uint8_t sel_idx = variable_index(sel_var);
+          std::uint16_t sel_idx = variable_index(sel_var);
           emit(OpCode::StoreVar, line, sel_idx);
           for (std::size_t i = 0; i < s.targets.size(); i++) {
             emit(OpCode::LoadVar, line, sel_idx);
@@ -510,10 +510,10 @@ void Compiler::compile_statement(const Statement& stmt) {
           auto load_lvalue = [&](const LValue& lv) {
             if (lv.is_array()) {
               for (auto& idx : lv.indices) compile_expr(*idx, line);
-              std::uint8_t vidx = variable_index(lv.name);
+              std::uint16_t vidx = variable_index(lv.name);
               std::uint8_t n = static_cast<std::uint8_t>(lv.indices.size());
               emit(OpCode::ArrayLoad, line,
-                   (static_cast<std::uint32_t>(n) << 8) | vidx);
+                   (static_cast<std::uint32_t>(n) << 16) | vidx);
             } else {
               emit(OpCode::LoadVar, line, variable_index(lv.name));
             }
@@ -522,10 +522,10 @@ void Compiler::compile_statement(const Statement& stmt) {
             if (lv.is_array()) {
               for (auto& idx : lv.indices) compile_expr(*idx, line);
               emit(OpCode::LoadTemp, line, slot);
-              std::uint8_t vidx = variable_index(lv.name);
+              std::uint16_t vidx = variable_index(lv.name);
               std::uint8_t n = static_cast<std::uint8_t>(lv.indices.size());
               emit(OpCode::ArrayStore, line,
-                   (static_cast<std::uint32_t>(n) << 8) | vidx);
+                   (static_cast<std::uint32_t>(n) << 16) | vidx);
             } else {
               emit(OpCode::LoadTemp, line, slot);
               emit(OpCode::StoreVar, line, variable_index(lv.name));
@@ -591,17 +591,17 @@ void Compiler::compile_expr(const Expr& expr, std::int32_t line) {
           std::string name = arg.name;
           auto it = rename_.find(name);
           if (it != rename_.end()) name = it->second;
-          std::uint8_t vidx = variable_index(name);
+          std::uint16_t vidx = variable_index(name);
           emit(OpCode::LoadVar, line, vidx);
         } else if constexpr (std::is_same_v<T, ArrayRefExpr>) {
           for (auto& idx : arg.indices) {
             compile_expr(*idx, line);
           }
-          std::uint8_t vidx = variable_index(arg.name);
+          std::uint16_t vidx = variable_index(arg.name);
           std::uint8_t num_indices =
               static_cast<std::uint8_t>(arg.indices.size());
           std::uint32_t operand =
-              (static_cast<std::uint32_t>(num_indices) << 8) | vidx;
+              (static_cast<std::uint32_t>(num_indices) << 16) | vidx;
           emit(OpCode::ArrayLoad, line, operand);
         } else if constexpr (std::is_same_v<T, FnCallExpr>) {
           auto it = functions_.find(arg.name);

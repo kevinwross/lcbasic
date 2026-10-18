@@ -27,6 +27,7 @@ const std::unordered_map<std::string_view, TokenType> kKeywords = {
     {"OPTION", TokenType::KeywordOption},
     {"BASE", TokenType::KeywordBase},
     {"INPUT", TokenType::KeywordInput},
+    {"PROMPT", TokenType::KeywordPrompt},
     {"LINE", TokenType::KeywordLine},
     {"ON", TokenType::KeywordOn},
     {"ERROR", TokenType::KeywordError},
@@ -167,8 +168,8 @@ TokenType Lexer::keyword(const std::string& text) {
 Token Lexer::scan_number() {
   while (is_digit(peek())) advance();
 
-  // Fractional part
-  if (peek() == '.' && is_digit(source_[current_ + 1])) {
+  // Fractional part (also handles a leading '.' such as .98, and '1.')
+  if (peek() == '.') {
     advance(); // consume '.'
     while (is_digit(peek())) advance();
   }
@@ -235,7 +236,7 @@ Token Lexer::scan_token() {
 
   char c = advance();
 
-  if (is_digit(c)) {
+  if (is_digit(c) || (c == '.' && is_digit(source_[current_]))) {
     current_ = start_;
     return scan_number();
   }

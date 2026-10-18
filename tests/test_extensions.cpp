@@ -348,3 +348,86 @@ TEST(ext_key_event) {
   CHECK(out.find("KEY") != std::string::npos);
   CHECK(out.find("DONE") != std::string::npos);
 }
+
+// ---------- Compatibility constructs exercised by startrek.bas ----------
+
+TEST(ext_more_than_256_variables) {
+  // Variable indices used to be uint8_t, so the 257th variable collided with
+  // an earlier one (and a string could land on a numeric slot).
+  std::string src;
+  for (int i = 0; i < 300; ++i) {
+    src += std::to_string(10 * (i + 1)) + " A" + std::to_string(i) + " = " +
+           std::to_string(i) + "\n";
+  }
+  src += "10000 B$ = \"OK\"\n";
+  src += "10010 PRINT B$\n";
+  src += "10020 PRINT A0; A299\n";
+  src += "10030 END\n";
+  auto r = e2e::run(src);
+  REQUIRE(r.ran);
+  CHECK(r.output == "OK\n 0  299 \n");
+}
+
+TEST(ext_nested_if) {
+  auto r = e2e::run(
+      "10 A = 1 : B = 2\n"
+      "20 IF A = 1 THEN IF B = 2 THEN 50\n"
+      "30 PRINT \"NO\"\n40 END\n"
+      "50 PRINT \"YES\"\n60 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == "YES\n");
+}
+
+TEST(ext_let_array_assignment) {
+  auto r = e2e::run(
+      "10 DIM C(2,2)\n20 LET C(1,2) = 42\n30 PRINT C(1,2)\n40 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == " 42 \n");
+}
+
+TEST(ext_leading_dot_number) {
+  auto r = e2e::run(
+      "10 IF .98 > .9 THEN PRINT \"YES\"\n20 PRINT .5\n30 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == "YES\n .5 \n");
+}
+
+TEST(ext_input_prompt_ansi) {
+  ScriptedHost host({"hello"});
+  auto r = e2e::run_with_host(
+      "10 INPUT PROMPT \"CMD\" : A$\n20 PRINT A$\n30 END", host);
+  REQUIRE(r.ran);
+  CHECK(r.output == "CMDhello\n");
+}
+
+TEST(ext_goto_rem_line) {
+  auto r = e2e::run(
+      "10 GOTO 30\n20 PRINT \"NO\"\n30 REM JUMP HERE\n"
+      "40 PRINT \"OK\"\n50 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == "OK\n");
+}
+
+TEST(ext_then_array_assignment) {
+  auto r = e2e::run(
+      "10 DIM D(3)\n20 D(1) = -5\n30 IF D(1) < 0 THEN D(1) = 0\n"
+      "40 PRINT D(1)\n50 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == " 0 \n");
+}
+
+TEST(ext_then_on_goto) {
+  auto r = e2e::run(
+      "10 Z = 2\n20 IF Z > 0 THEN ON Z GOTO 40, 60\n"
+      "30 PRINT \"NO\"\n40 PRINT \"A\"\n50 END\n60 PRINT \"B\"\n70 END");
+  REQUIRE(r.ran);
+  CHECK(r.output == "B\n");
+}
+
+TEST(ext_then_return) {
+  auto r = e2e::run(
+      "10 GOSUB 100\n20 PRINT \"DONE\"\n30 END\n"
+      "100 IF 1 = 1 THEN RETURN\n110 PRINT \"NO\"\n120 RETURN");
+  REQUIRE(r.ran);
+  CHECK(r.output == "DONE\n");
+}

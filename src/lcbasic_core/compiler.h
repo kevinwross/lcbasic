@@ -81,7 +81,7 @@ enum class OpCode : std::uint8_t {
 
 // A compiled DEF FN descriptor (for recursion-safe calls).
 struct FnDesc {
-  std::vector<std::uint8_t> param_vars;
+  std::vector<std::uint16_t> param_vars;
   std::size_t body_pc = 0;
 };
 
@@ -111,7 +111,7 @@ public:
   const std::vector<Instruction>& code() const { return code_; }
   const std::vector<Value>& constants() const { return constants_; }
   const std::vector<LineEntry>& line_table() const { return line_table_; }
-  const std::unordered_map<std::string, std::uint8_t>& variable_table()
+  const std::unordered_map<std::string, std::uint16_t>& variable_table()
       const {
     return variable_table_;
   }
@@ -132,7 +132,7 @@ private:
   std::vector<Value> constants_;
   std::vector<LineEntry> line_table_;
   std::vector<Fixup> fixups_;
-  std::unordered_map<std::string, std::uint8_t> variable_table_;
+  std::unordered_map<std::string, std::uint16_t> variable_table_;
   std::vector<std::string> variable_names_;
   std::vector<Value> data_values_;
   std::int32_t option_base_ = 0;
@@ -155,8 +155,8 @@ private:
 
   std::size_t next_pc() const { return code_.size(); }
 
-  std::uint8_t add_constant(const Value& v);
-  std::uint8_t variable_index(const std::string& name);
+  std::uint32_t add_constant(const Value& v);
+  std::uint16_t variable_index(const std::string& name);
   std::size_t data_index_for_line(std::int32_t line) const;
   void emit(OpCode op, std::int32_t line, std::uint32_t operand = 0);
   void record_fixup(std::size_t code_index, std::int32_t target_line);

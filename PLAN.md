@@ -140,6 +140,13 @@ Notes:
 - Built-ins also include `INKEY$`, `DATE$`, `TIME$`, `INPUT$`.
 - KEY events fire when a key is available; COM/PEN/STRIG remain armed
   (no event source).
+- Real-program compatibility (verified with the classic `startrek.bas`):
+  `DIM` accepts multiple arrays; `LET` assigns array elements; numbers may
+  start with `.` (`.98`); nested `IF ... THEN IF ...`; `INPUT PROMPT
+  "text" : var` (ANSI form); `THEN` clauses may contain `RETURN`,
+  `ON ... GOTO/GOSUB`, and array assignments; REM-only lines remain valid
+  `GOTO` targets. Variable indices are 16-bit (programs may have >256
+  variables) and the constant pool is 32-bit.
 - Random-access files: `OPEN ... FOR RANDOM [LEN=]`, `FIELD`, `LSET`/`RSET`,
   `GET`/`PUT`, `CLOSE`.
 - Built-in functions: numeric (`ABS`…`CDBL`, `RND`), string (`LEN`…`OCT$`),

@@ -132,6 +132,15 @@ bool Parser::parse_statement() {
       consume(TokenType::Identifier, "expected variable name after LET");
       LetStmt let;
       let.var = tokens_[current_ - 1].lexeme;
+      // Array assignment: LET arr(i, j) = value
+      if (match(TokenType::LParen)) {
+        do {
+          auto idx = parse_expression();
+          if (!idx) return false;
+          let.indices.push_back(std::move(idx));
+        } while (match(TokenType::Comma));
+        consume(TokenType::RParen, "expected ')' after array indices");
+      }
       consume(TokenType::Eq, "expected '=' after variable name");
       let.value = parse_expression();
       if (!let.value) return false;
@@ -247,6 +256,12 @@ bool Parser::parse_statement() {
       while (!is_at_end() && !check(TokenType::Newline)) {
         advance();
       }
+      // Keep a no-op statement so a REM-only line still exists as a GOTO
+      // target (GW-BASIC allows jumping to a comment line).
+      Statement rem_stmt;
+      rem_stmt.line_number = line_number;
+      rem_stmt.data = StubStmt{"REM"};
+      program_.lines.emplace_back(line_number, std::move(rem_stmt));
       break;
     } else if (match(TokenType::KeywordDim)) {
       // DIM supports a comma-separated list of arrays:
@@ -424,13 +439,17 @@ bool Parser::parse_statement() {
         } while (match(TokenType::Comma));
         stmt.data = std::move(ifile);
       } else {
-        // INPUT [prompt;] var[, var...]
+        // INPUT [PROMPT] [prompt;] var[, var...]
         InputStmt in;
-        if (check(TokenType::String)) {
+        // ANSI-style: INPUT PROMPT "text" : var  (also accepts ; or ,)
+        bool had_prompt = match(TokenType::KeywordPrompt);
+        if (had_prompt || check(TokenType::String)) {
           in.prompt = parse_expression();
           if (!in.prompt) return false;
-          if (!match(TokenType::Semicolon) && !match(TokenType::Comma)) {
-            error_at_current("expected ';' or ',' after INPUT prompt");
+          if (!match(TokenType::Semicolon) && !match(TokenType::Comma) &&
+              !match(TokenType::Colon)) {
+            error_at_current(
+                "expected ';', ',' or ':' after INPUT prompt");
             return false;
           }
           in.prompt_comma =
@@ -977,28 +996,98 @@ std::unique_ptr<Statement> Parser::parse_statement_no_line() {
            print.separators.back() != TokenType::Eof);
       stmt->data = std::move(print);
     }
+  } else if (match(TokenType::KeywordIf)) {
+    // Nested IF inside a THEN/ELSE clause:
+    //   IF a THEN IF b THEN 100
+    auto cond = parse_expression();
+    if (!cond) return nullptr;
+    consume(TokenType::KeywordThen, "expected THEN after IF condition");
+    IfStmt if_stmt;
+    if_stmt.condition = std::move(cond);
+    if (check(TokenType::Number)) {
+      Token then_line_tok = advance();
+      if_stmt.then_line = static_cast<std::int32_t>(then_line_tok.number);
+      if (match(TokenType::KeywordElse)) {
+        consume(TokenType::Number, "expected line number after ELSE");
+        if_stmt.else_line =
+            static_cast<std::int32_t>(tokens_[current_ - 1].number);
+      }
+    } else {
+      while (!is_at_end() && !check(TokenType::Newline) &&
+             !check(TokenType::Colon) && !check(TokenType::KeywordElse)) {
+        auto inner = parse_statement_no_line();
+        if (!inner) break;
+        if_stmt.then_stmts.push_back(std::move(inner));
+      }
+      if (match(TokenType::KeywordElse)) {
+        while (!is_at_end() && !check(TokenType::Newline) &&
+               !check(TokenType::Colon)) {
+          auto inner = parse_statement_no_line();
+          if (!inner) break;
+          if_stmt.else_stmts.push_back(std::move(inner));
+        }
+      }
+    }
+    stmt->data = std::move(if_stmt);
   } else if (match(TokenType::KeywordGoto)) {
     consume(TokenType::Number, "expected line number after GOTO");
     GotoStmt g;
     g.target_line = static_cast<std::int32_t>(tokens_[current_ - 1].number);
     stmt->data = std::move(g);
+  } else if (match(TokenType::KeywordReturn)) {
+    stmt->data = ReturnStmt{};
+  } else if (match(TokenType::KeywordOn)) {
+    // ON expr GOTO/GOSUB line[, line...] inside a THEN clause.
+    OnGotoStmt og;
+    og.selector = parse_expression();
+    if (!og.selector) return nullptr;
+    if (match(TokenType::KeywordGoto)) {
+      og.gosub = false;
+    } else if (match(TokenType::KeywordGosub)) {
+      og.gosub = true;
+    } else {
+      error_at_current("expected GOTO or GOSUB after ON expression");
+      return nullptr;
+    }
+    do {
+      consume(TokenType::Number, "expected line number");
+      og.targets.push_back(
+          static_cast<std::int32_t>(tokens_[current_ - 1].number));
+    } while (match(TokenType::Comma));
+    stmt->data = std::move(og);
   } else if (match(TokenType::KeywordLet)) {
     consume(TokenType::Identifier, "expected variable name after LET");
     LetStmt let;
     let.var = tokens_[current_ - 1].lexeme;
+    if (match(TokenType::LParen)) {
+      do {
+        auto idx = parse_expression();
+        if (!idx) return nullptr;
+        let.indices.push_back(std::move(idx));
+      } while (match(TokenType::Comma));
+      consume(TokenType::RParen, "expected ')' after array indices");
+    }
     consume(TokenType::Eq, "expected '=' after variable name");
     let.value = parse_expression();
     stmt->data = std::move(let);
   } else if (check(TokenType::Identifier)) {
     Token var_tok = peek();
     std::size_t save = current_;
-    advance();
+    advance();  // variable name
+    std::vector<std::unique_ptr<Expr>> indices;
+    if (match(TokenType::LParen)) {
+      do {
+        auto idx = parse_expression();
+        if (!idx) return nullptr;
+        indices.push_back(std::move(idx));
+      } while (match(TokenType::Comma));
+      consume(TokenType::RParen, "expected ')' after indices");
+    }
     if (check(TokenType::Eq)) {
-      current_ = save;
-      consume(TokenType::Identifier, "expected variable name");
-      consume(TokenType::Eq, "expected '=' after variable name");
+      advance();  // '='
       LetStmt let;
       let.var = var_tok.lexeme;
+      let.indices = std::move(indices);
       let.value = parse_expression();
       stmt->data = std::move(let);
     } else {

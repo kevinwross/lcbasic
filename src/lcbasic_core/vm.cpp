@@ -23,12 +23,12 @@ Value Vm::pop() {
 
 void Vm::push(Value v) { stack_.push_back(std::move(v)); }
 
-std::string Vm::var_name(std::uint8_t idx) const {
+std::string Vm::var_name(std::uint16_t idx) const {
   if (idx < variable_names_.size()) return variable_names_[idx];
   return "?";
 }
 
-VarType Vm::var_type(std::uint8_t idx) const {
+VarType Vm::var_type(std::uint16_t idx) const {
   std::string name = var_name(idx);
   if (has_type_suffix(name)) return deduce_var_type(name);
   if (!name.empty()) {
@@ -366,7 +366,7 @@ bool Vm::check_events() {
 void Vm::load(const std::vector<Instruction>& code,
               const std::vector<Value>& constants,
               const std::vector<LineEntry>& line_table,
-              const std::unordered_map<std::string, std::uint8_t>& variable_table,
+              const std::unordered_map<std::string, std::uint16_t>& variable_table,
               const std::vector<std::string>& variable_names,
               const std::vector<Value>& data_values,
               const std::vector<FnDesc>& fn_descs) {
@@ -378,7 +378,7 @@ void Vm::load(const std::vector<Instruction>& code,
   fn_frames_.clear();
   fn_return_.clear();
 
-  std::uint8_t max_idx = 0;
+  std::uint16_t max_idx = 0;
   for (const auto& [name, idx] : variable_table) {
     if (idx > max_idx) max_idx = idx;
   }
@@ -663,7 +663,7 @@ ExecStatus Vm::execute(bool single_step) {
           double step = pop().as_double();
           double limit = pop().as_double();
           ForFrame frame;
-          frame.var_index = static_cast<std::uint8_t>(inst.operand);
+          frame.var_index = static_cast<std::uint16_t>(inst.operand);
           frame.limit = limit;
           frame.step = step;
           frame.body_start_pc = ip_;
@@ -696,9 +696,9 @@ ExecStatus Vm::execute(bool single_step) {
           break;
         }
         case OpCode::Dim: {
-          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand & 0xFF);
+          std::uint16_t vidx = static_cast<std::uint16_t>(inst.operand & 0xFFFF);
           std::uint8_t num_dims =
-              static_cast<std::uint8_t>((inst.operand >> 8) & 0xFF);
+              static_cast<std::uint8_t>((inst.operand >> 16) & 0xFF);
           std::vector<double> bounds_d;
           bounds_d.reserve(num_dims);
           for (std::uint8_t i = 0; i < num_dims; ++i) {
@@ -718,9 +718,9 @@ ExecStatus Vm::execute(bool single_step) {
           break;
         }
         case OpCode::ArrayLoad: {
-          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand & 0xFF);
+          std::uint16_t vidx = static_cast<std::uint16_t>(inst.operand & 0xFFFF);
           std::uint8_t num_indices =
-              static_cast<std::uint8_t>((inst.operand >> 8) & 0xFF);
+              static_cast<std::uint8_t>((inst.operand >> 16) & 0xFF);
           std::vector<std::int32_t> indices;
           indices.reserve(num_indices);
           for (std::uint8_t i = 0; i < num_indices; ++i) {
@@ -735,9 +735,9 @@ ExecStatus Vm::execute(bool single_step) {
           break;
         }
         case OpCode::ArrayStore: {
-          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand & 0xFF);
+          std::uint16_t vidx = static_cast<std::uint16_t>(inst.operand & 0xFFFF);
           std::uint8_t num_indices =
-              static_cast<std::uint8_t>((inst.operand >> 8) & 0xFF);
+              static_cast<std::uint8_t>((inst.operand >> 16) & 0xFF);
           Value val = pop();
           std::vector<std::int32_t> indices;
           indices.reserve(num_indices);
@@ -756,16 +756,16 @@ ExecStatus Vm::execute(bool single_step) {
           break;
         }
         case OpCode::ReadVar: {
-          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand);
+          std::uint16_t vidx = static_cast<std::uint16_t>(inst.operand);
           Value v = data_pool_.read();
           var_values_[vidx] = coerce_value(v, var_type(vidx), current_line);
           var_init_[vidx] = true;
           break;
         }
         case OpCode::ReadArray: {
-          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand & 0xFF);
+          std::uint16_t vidx = static_cast<std::uint16_t>(inst.operand & 0xFFFF);
           std::uint8_t num_indices =
-              static_cast<std::uint8_t>((inst.operand >> 8) & 0xFF);
+              static_cast<std::uint8_t>((inst.operand >> 16) & 0xFF);
           std::vector<std::int32_t> indices;
           indices.reserve(num_indices);
           for (std::uint8_t i = 0; i < num_indices; ++i) {
@@ -952,13 +952,13 @@ ExecStatus Vm::execute(bool single_step) {
           bool line_input = (inst.operand & 0x100) != 0;
 
           struct Target {
-            std::uint8_t vidx;
+            std::uint16_t vidx;
             bool is_array;
             std::vector<std::int32_t> indices;
           };
           std::vector<Target> targets(static_cast<std::size_t>(count));
           for (int i = count - 1; i >= 0; --i) {
-            std::uint8_t vidx = static_cast<std::uint8_t>(pop().as_double());
+            std::uint16_t vidx = static_cast<std::uint16_t>(pop().as_double());
             int n = static_cast<int>(std::round(pop().as_double()));
             std::vector<std::int32_t> indices;
             for (int k = 0; k < n; k++) {
@@ -1082,13 +1082,13 @@ ExecStatus Vm::execute(bool single_step) {
           bool prompt_comma = (inst.operand & 0x200) != 0;
 
           struct Target {
-            std::uint8_t vidx;
+            std::uint16_t vidx;
             bool is_array;
             std::vector<std::int32_t> indices;
           };
           std::vector<Target> targets(static_cast<std::size_t>(count));
           for (int i = count - 1; i >= 0; --i) {
-            std::uint8_t vidx = static_cast<std::uint8_t>(pop().as_double());
+            std::uint16_t vidx = static_cast<std::uint16_t>(pop().as_double());
             int n = static_cast<int>(std::round(pop().as_double()));
             std::vector<std::int32_t> indices;
             for (int k = 0; k < n; k++) {
@@ -1209,13 +1209,13 @@ ExecStatus Vm::execute(bool single_step) {
           break;
         }
         case OpCode::Erase: {
-          arrays_.erase(var_name(static_cast<std::uint8_t>(inst.operand)));
+          arrays_.erase(var_name(static_cast<std::uint16_t>(inst.operand)));
           break;
         }
         case OpCode::Clear: {
           for (std::size_t i = 0; i < var_values_.size(); i++) {
             var_values_[i] = default_value(var_type(
-                static_cast<std::uint8_t>(i)));
+                static_cast<std::uint16_t>(i)));
             var_init_[i] = false;
           }
           arrays_.clear();
@@ -1229,7 +1229,7 @@ ExecStatus Vm::execute(bool single_step) {
           break;
         }
         case OpCode::MidAssign: {
-          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand);
+          std::uint16_t vidx = static_cast<std::uint16_t>(inst.operand);
           double len_d = pop().as_double();
           double start_d = pop().as_double();
           Value val = pop();
@@ -1287,7 +1287,7 @@ ExecStatus Vm::execute(bool single_step) {
           break;
         }
         case OpCode::Field: {
-          std::uint8_t vidx = static_cast<std::uint8_t>(pop().as_double());
+          std::uint16_t vidx = static_cast<std::uint16_t>(pop().as_double());
           int len = static_cast<int>(std::round(pop().as_double()));
           int filenum = static_cast<int>(inst.operand);
           auto it = random_files_.find(filenum);
@@ -1308,7 +1308,7 @@ ExecStatus Vm::execute(bool single_step) {
         }
         case OpCode::LSet: {
           Value val = pop();
-          std::uint8_t vidx = static_cast<std::uint8_t>(inst.operand >> 1);
+          std::uint16_t vidx = static_cast<std::uint16_t>(inst.operand >> 1);
           bool right = (inst.operand & 1u) != 0;
           std::string s = val.as_string();
           RandomFile* rf = nullptr;
@@ -1565,7 +1565,7 @@ std::optional<Value> Vm::get_variable(const std::string& name) const {
     if (variable_names_[i] == name) {
       if (i < var_values_.size()) {
         if (i >= var_init_.size() || !var_init_[i]) {
-          return default_value(var_type(static_cast<std::uint8_t>(i)));
+          return default_value(var_type(static_cast<std::uint16_t>(i)));
         }
         return var_values_[i];
       }
@@ -1596,7 +1596,7 @@ bool Vm::set_variable(const std::string& name, const Value& v) {
     if (variable_names_[i] == name) {
       if (i < var_values_.size()) {
         var_values_[i] = coerce_value(
-            v, var_type(static_cast<std::uint8_t>(i)), current_line());
+            v, var_type(static_cast<std::uint16_t>(i)), current_line());
         var_init_[i] = true;
         return true;
       }
